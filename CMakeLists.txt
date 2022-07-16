@@ -27,4 +27,5 @@ target_link_libraries(picowota
 	hardware_structs
 	pico_cyw43_arch_lwip_poll
 	pico_stdlib
+	pico_sync
 )

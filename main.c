@@ -12,6 +12,7 @@
 
 #include "RP2040.h"
 #include "pico/time.h"
+#include "pico/critical_section.h"
 #include "hardware/dma.h"
 #include "hardware/flash.h"
 #include "hardware/structs/dma.h"
@@ -28,6 +29,7 @@
 
 extern const char *wifi_ssid;
 extern const char *wifi_pass;
+critical_section_t critical_section;
 
 #define BOOTLOADER_ENTRY_PIN 15
 #define BOOTLOADER_ENTRY_MAGIC 0xb105f00d
@@ -244,7 +246,9 @@ static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 		return TCP_COMM_RSP_ERR;
 	}
 
+	critical_section_enter_blocking(&critical_section);
 	flash_range_erase(addr - XIP_BASE, size);
+	critical_section_exit(&critical_section);
 
 	return TCP_COMM_RSP_OK;
 }
@@ -291,7 +295,9 @@ static uint32_t handle_write(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
+	critical_section_enter_blocking(&critical_section);
 	flash_range_program(addr - XIP_BASE, data_in, size);
+	critical_section_exit(&critical_section);
 
 	resp_args_out[0] = calc_crc32((void *)addr, size);
 
@@ -359,8 +365,10 @@ static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 		return TCP_COMM_RSP_ERR;
 	}
 
+	critical_section_enter_blocking(&critical_section);
 	flash_range_erase(IMAGE_HEADER_OFFSET, FLASH_SECTOR_SIZE);
 	flash_range_program(IMAGE_HEADER_OFFSET, (const uint8_t *)&hdr, sizeof(hdr));
+	critical_section_exit(&critical_section);
 
 	struct image_header *check = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
 	if (memcmp(&hdr, check, sizeof(hdr))) {
@@ -522,6 +530,8 @@ int main()
 		printf("Connected.\n");
 	}
 
+	critical_section_init(&critical_section);
+
 	const struct comm_command *cmds[] = {
 		&sync_cmd,
 		&read_cmd,
@@ -529,10 +539,10 @@ int main()
 		&crc_cmd,
 		&erase_cmd,
 		&write_cmd,
-		//&seal_cmd,
-		//&go_cmd,
+		&seal_cmd,
+		&go_cmd,
 		&info_cmd,
-		//&reboot_cmd,
+		&reboot_cmd,
 	};
 
 	struct tcp_comm_ctx *tcp = tcp_comm_new(cmds, sizeof(cmds) / sizeof(cmds[0]), CMD_SYNC);
