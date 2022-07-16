@@ -25,6 +25,22 @@ extern const char *wifi_pass;
 
 #define MAX_LEN 2048
 
+#define COMM_MAX_NARG     5
+#define COMM_MAX_DATA_LEN 1024
+
+#define COMM_RSP_OK       (('O' << 0) | ('K' << 8) | ('O' << 16) | ('K' << 24))
+#define COMM_RSP_ERR      (('E' << 0) | ('R' << 8) | ('R' << 16) | ('!' << 24))
+#define CMD_SYNC          (('S' << 0) | ('Y' << 8) | ('N' << 16) | ('C' << 24))
+#define RSP_SYNC          (('W' << 0) | ('O' << 8) | ('T' << 16) | ('A' << 24))
+
+struct comm_command {
+	uint32_t opcode;
+	uint32_t nargs;
+	uint32_t resp_nargs;
+	uint32_t (*size)(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out);
+	uint32_t (*handle)(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
+};
+
 enum conn_state {
 	CONN_STATE_WAIT_FOR_SYNC,
 	CONN_STATE_READ_OPCODE,
@@ -32,21 +48,240 @@ enum conn_state {
 	CONN_STATE_READ_DATA,
 	CONN_STATE_HANDLE,
 	CONN_STATE_WRITE_RESP,
-	CONN_STATE_ERROR,
+	CONN_STATE_WRITE_ERROR,
 	CONN_STATE_CLOSED,
 };
 
-struct tcp_ctx {
+struct tcp_comm_ctx {
 	struct tcp_pcb *serv_pcb;
 	volatile bool serv_done;
+	enum conn_state conn_state;
 
 	struct tcp_pcb *conn_pcb;
-	uint8_t buf[MAX_LEN];
-	size_t bytes_remaining;
-	enum conn_state conn_state;
+	uint8_t buf[(sizeof(uint32_t) * (1 + COMM_MAX_NARG)) + COMM_MAX_DATA_LEN];
+	uint16_t rx_bytes_received;
+	uint16_t rx_bytes_remaining;
+
+	uint16_t tx_bytes_sent;
+	uint16_t tx_bytes_remaining;
+
+	uint32_t resp_data_len;
+
+	const struct comm_command *cmd;
+	const struct comm_command *const *cmds;
+	unsigned int n_cmds;
+	uint32_t sync_opcode;
 };
 
-static err_t tcp_conn_close(struct tcp_ctx *ctx)
+#define COMM_BUF_OPCODE(_buf)       ((uint32_t *)((uint8_t *)(_buf)))
+#define COMM_BUF_ARGS(_buf)         ((uint32_t *)((uint8_t *)(_buf) + sizeof(uint32_t)))
+#define COMM_BUF_BODY(_buf, _nargs) ((uint8_t *)(_buf) + (sizeof(uint32_t) * ((_nargs) + 1)))
+
+static const struct comm_command *find_command_desc(struct tcp_comm_ctx *ctx, uint32_t opcode)
+{
+	unsigned int i;
+
+	for (i = 0; i < ctx->n_cmds; i++) {
+		if (ctx->cmds[i]->opcode == opcode) {
+			return ctx->cmds[i];
+		}
+	}
+
+	return NULL;
+}
+
+static bool is_error(uint32_t status)
+{
+	return status == COMM_RSP_ERR;
+}
+
+static int tcp_conn_sync_begin(struct tcp_comm_ctx *ctx);
+static int tcp_conn_sync_complete(struct tcp_comm_ctx *ctx);
+static int tcp_conn_opcode_begin(struct tcp_comm_ctx *ctx);
+static int tcp_conn_opcode_complete(struct tcp_comm_ctx *ctx);
+static int tcp_conn_args_begin(struct tcp_comm_ctx *ctx);
+static int tcp_conn_args_complete(struct tcp_comm_ctx *ctx);
+static int tcp_conn_data_begin(struct tcp_comm_ctx *ctx, uint32_t data_len);
+static int tcp_conn_data_complete(struct tcp_comm_ctx *ctx);
+static int tcp_conn_response_begin(struct tcp_comm_ctx *ctx);
+static int tcp_conn_response_complete(struct tcp_comm_ctx *ctx);
+static int tcp_conn_error_begin(struct tcp_comm_ctx *ctx);
+
+static int tcp_conn_sync_begin(struct tcp_comm_ctx *ctx)
+{
+	ctx->conn_state = CONN_STATE_WAIT_FOR_SYNC;
+	ctx->rx_bytes_received = 0;
+	ctx->rx_bytes_remaining = sizeof(uint32_t);
+
+	DEBUG_printf("sync_begin %d\n", ctx->rx_bytes_remaining);
+}
+
+static int tcp_conn_sync_complete(struct tcp_comm_ctx *ctx)
+{
+	if (ctx->sync_opcode != *COMM_BUF_OPCODE(ctx->buf)) {
+		DEBUG_printf("sync not correct: %c%c%c%c\n", ctx->buf[0], ctx->buf[1], ctx->buf[2], ctx->buf[3]);
+		return tcp_conn_error_begin(ctx);
+	}
+
+	return tcp_conn_opcode_complete(ctx);
+}
+
+static int tcp_conn_opcode_begin(struct tcp_comm_ctx *ctx)
+{
+	ctx->conn_state = CONN_STATE_READ_OPCODE;
+	ctx->rx_bytes_received = 0;
+	ctx->rx_bytes_remaining = sizeof(uint32_t);
+
+	return 0;
+}
+
+static int tcp_conn_opcode_complete(struct tcp_comm_ctx *ctx)
+{
+	ctx->cmd = find_command_desc(ctx, *COMM_BUF_OPCODE(ctx->buf));
+	if (!ctx->cmd) {
+		DEBUG_printf("no command for '%c%c%c%c'\n", ctx->buf[0], ctx->buf[1], ctx->buf[2], ctx->buf[3]);
+		return tcp_conn_error_begin(ctx);
+	} else {
+		DEBUG_printf("got command '%c%c%c%c'\n", ctx->buf[0], ctx->buf[1], ctx->buf[2], ctx->buf[3]);
+	}
+
+	return tcp_conn_args_begin(ctx);
+}
+
+static int tcp_conn_args_begin(struct tcp_comm_ctx *ctx)
+{
+	ctx->conn_state = CONN_STATE_READ_ARGS;
+	ctx->rx_bytes_received = 0;
+	ctx->rx_bytes_remaining = ctx->cmd->nargs * sizeof(uint32_t);
+
+	if (ctx->cmd->nargs == 0) {
+		return tcp_conn_args_complete(ctx);
+	}
+
+	return 0;
+}
+
+static int tcp_conn_args_complete(struct tcp_comm_ctx *ctx)
+{
+	const struct comm_command *cmd = ctx->cmd;
+
+	uint32_t data_len = 0;
+
+	if (cmd->size) {
+		uint32_t status = cmd->size(COMM_BUF_ARGS(ctx->buf),
+					    &data_len,
+					    &ctx->resp_data_len);
+		if (is_error(status)) {
+			return tcp_conn_error_begin(ctx);
+		}
+	}
+
+	return tcp_conn_data_begin(ctx, data_len);
+}
+
+static int tcp_conn_data_begin(struct tcp_comm_ctx *ctx, uint32_t data_len)
+{
+	const struct comm_command *cmd = ctx->cmd;
+
+	ctx->conn_state = CONN_STATE_READ_DATA;
+	ctx->rx_bytes_received = 0;
+	ctx->rx_bytes_remaining = data_len;
+
+	if (data_len == 0) {
+		return tcp_conn_data_complete(ctx);
+	}
+
+
+	return 0;
+}
+
+static int tcp_conn_data_complete(struct tcp_comm_ctx *ctx)
+{
+	const struct comm_command *cmd = ctx->cmd;
+
+	if (cmd->handle) {
+		uint32_t status = cmd->handle(COMM_BUF_ARGS(ctx->buf),
+					      COMM_BUF_BODY(ctx->buf, cmd->nargs),
+					      COMM_BUF_ARGS(ctx->buf),
+					      COMM_BUF_BODY(ctx->buf, cmd->resp_nargs));
+		if (is_error(status)) {
+			return tcp_conn_error_begin(ctx);
+		}
+
+		*COMM_BUF_OPCODE(ctx->buf) = status;
+	} else {
+		// TODO: Should we just assert(desc->handle)?
+		*COMM_BUF_OPCODE(ctx->buf) = COMM_RSP_OK;
+	}
+
+	return tcp_conn_response_begin(ctx);
+}
+
+static int tcp_conn_response_begin(struct tcp_comm_ctx *ctx)
+{
+	ctx->conn_state = CONN_STATE_WRITE_RESP;
+	ctx->tx_bytes_sent = 0;
+	ctx->tx_bytes_remaining = ctx->resp_data_len + ((ctx->cmd->resp_nargs + 1) * sizeof(uint32_t));
+
+	err_t err = tcp_write(ctx->conn_pcb, ctx->buf, ctx->tx_bytes_remaining, 0);
+	if (err != ERR_OK) {
+		return -1;
+	}
+
+	return 0;
+}
+
+static int tcp_conn_error_begin(struct tcp_comm_ctx *ctx)
+{
+	ctx->conn_state = CONN_STATE_WRITE_ERROR;
+	ctx->tx_bytes_sent = 0;
+	ctx->tx_bytes_remaining = sizeof(uint32_t);
+
+	*COMM_BUF_OPCODE(ctx->buf) = COMM_RSP_ERR;
+
+	err_t err = tcp_write(ctx->conn_pcb, ctx->buf, ctx->tx_bytes_remaining, 0);
+	if (err != ERR_OK) {
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static int tcp_conn_response_complete(struct tcp_comm_ctx *ctx)
+{
+	return tcp_conn_opcode_begin(ctx);
+}
+
+static int tcp_conn_rx_complete(struct tcp_comm_ctx *ctx)
+{
+	switch (ctx->conn_state) {
+	case CONN_STATE_WAIT_FOR_SYNC:
+		return tcp_conn_sync_complete(ctx);
+	case CONN_STATE_READ_OPCODE:
+		return tcp_conn_opcode_complete(ctx);
+	case CONN_STATE_READ_ARGS:
+		return tcp_conn_args_complete(ctx);
+	case CONN_STATE_READ_DATA:
+		return tcp_conn_data_complete(ctx);
+	default:
+		return -1;
+	}
+}
+
+static int tcp_conn_tx_complete(struct tcp_comm_ctx *ctx)
+{
+	switch (ctx->conn_state) {
+	case CONN_STATE_WRITE_RESP:
+		return tcp_conn_response_complete(ctx);
+	case CONN_STATE_WRITE_ERROR:
+		return -1;
+	default:
+		return -1;
+	}
+}
+
+static err_t tcp_conn_close(struct tcp_comm_ctx *ctx)
 {
 	err_t err = ERR_OK;
 
@@ -76,7 +311,7 @@ static err_t tcp_conn_close(struct tcp_ctx *ctx)
 
 static err_t tcp_server_close(void *arg)
 {
-	struct tcp_ctx *ctx = (struct tcp_ctx *)arg;
+	struct tcp_comm_ctx *ctx = (struct tcp_comm_ctx *)arg;
 	err_t err = ERR_OK;
 
 	err = tcp_conn_close(ctx);
@@ -104,7 +339,7 @@ static err_t tcp_server_close(void *arg)
 
 static void tcp_server_complete(void *arg, int status)
 {
-	struct tcp_ctx *ctx = (struct tcp_ctx *)arg;
+	struct tcp_comm_ctx *ctx = (struct tcp_comm_ctx *)arg;
 	if (status == 0) {
 		DEBUG_printf("server completed normally\n");
 	} else {
@@ -117,7 +352,7 @@ static void tcp_server_complete(void *arg, int status)
 
 static err_t tcp_conn_complete(void *arg, int status)
 {
-	struct tcp_ctx *ctx = (struct tcp_ctx *)arg;
+	struct tcp_comm_ctx *ctx = (struct tcp_comm_ctx *)arg;
 	if (status == 0) {
 		DEBUG_printf("conn completed normally\n");
 	} else {
@@ -128,16 +363,33 @@ static err_t tcp_conn_complete(void *arg, int status)
 
 static err_t tcp_conn_sent(void *arg, struct tcp_pcb *tpcb, u16_t len)
 {
-	struct tcp_ctx *ctx = (struct tcp_ctx *)arg;
+	struct tcp_comm_ctx *ctx = (struct tcp_comm_ctx *)arg;
 	DEBUG_printf("tcp_server_sent %u\n", len);
+
+	cyw43_arch_lwip_check();
+	if (len > ctx->tx_bytes_remaining) {
+		DEBUG_printf("tx len %d > remaining %d\n", len, ctx->tx_bytes_remaining);
+		return tcp_conn_complete(ctx, ERR_ARG);
+	}
+
+	ctx->tx_bytes_remaining -= len;
+	ctx->tx_bytes_sent += len;
+
+	if (ctx->tx_bytes_remaining == 0) {
+		int res = tcp_conn_tx_complete(ctx);
+		if (res) {
+			return tcp_conn_complete(ctx, ERR_ARG);
+		}
+	}
 
 	return ERR_OK;
 }
 
 static err_t tcp_conn_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
 {
-	struct tcp_ctx *ctx = (struct tcp_ctx *)arg;
+	struct tcp_comm_ctx *ctx = (struct tcp_comm_ctx *)arg;
 	if (!p) {
+		DEBUG_printf("no pbuf\n");
 		return tcp_conn_complete(ctx, 0);
 	}
 
@@ -148,12 +400,24 @@ static err_t tcp_conn_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_
 	if (p->tot_len > 0) {
 		DEBUG_printf("tcp_server_recv %d err %d\n", p->tot_len, err);
 
-		// Receive the buffer
-		pbuf_copy_partial(p, ctx->buf, p->tot_len, 0);
+		size_t to_copy = p->tot_len > ctx->rx_bytes_remaining ? ctx->rx_bytes_remaining : p->tot_len;
 
-		ctx->buf[p->tot_len] = '\0';
-		printf("%s\n", ctx->buf);
+		// Receive the buffer
+		if (pbuf_copy_partial(p, ctx->buf + ctx->rx_bytes_received, to_copy, 0) != to_copy) {
+			DEBUG_printf("wrong copy len\n");
+			return tcp_conn_complete(ctx, ERR_ARG);
+		}
+
+		ctx->rx_bytes_received += to_copy;
+		ctx->rx_bytes_remaining -= to_copy;
 		tcp_recved(tpcb, p->tot_len);
+
+		if (ctx->rx_bytes_remaining == 0) {
+			int res = tcp_conn_rx_complete(ctx);
+			if (res) {
+				return tcp_conn_complete(ctx, ERR_ARG);
+			}
+		}
 	}
 	pbuf_free(p);
 
@@ -168,39 +432,34 @@ static err_t tcp_conn_poll(void *arg, struct tcp_pcb *tpcb)
 
 static void tcp_conn_err(void *arg, err_t err)
 {
-	struct tcp_ctx *ctx = (struct tcp_ctx *)arg;
+	struct tcp_comm_ctx *ctx = (struct tcp_comm_ctx *)arg;
 
 	DEBUG_printf("tcp_conn_err %d\n", err);
 
 	ctx->conn_pcb = NULL;
 	ctx->conn_state = CONN_STATE_CLOSED;
-	ctx->bytes_remaining = 0;
+	ctx->rx_bytes_remaining = 0;
 	cyw43_arch_gpio_put (0, false);
 }
 
-static void tcp_conn_wait_for_sync(struct tcp_ctx *ctx)
-{
-	ctx->conn_state = CONN_STATE_WAIT_FOR_SYNC;
-	ctx->bytes_remaining = 4;
-}
-
-static void tcp_conn_init(struct tcp_ctx *ctx, struct tcp_pcb *pcb)
+static void tcp_conn_init(struct tcp_comm_ctx *ctx, struct tcp_pcb *pcb)
 {
 	ctx->conn_pcb = pcb;
 	tcp_arg(pcb, ctx);
+
+	cyw43_arch_gpio_put (0, true);
+
+	tcp_conn_sync_begin(ctx);
+
 	tcp_sent(pcb, tcp_conn_sent);
 	tcp_recv(pcb, tcp_conn_recv);
 	tcp_poll(pcb, tcp_conn_poll, POLL_TIME_S * 2);
 	tcp_err(pcb, tcp_conn_err);
-
-	cyw43_arch_gpio_put (0, true);
-
-	tcp_conn_wait_for_sync(ctx);
 }
 
 static err_t tcp_server_accept(void *arg, struct tcp_pcb *client_pcb, err_t err)
 {
-	struct tcp_ctx *ctx = (struct tcp_ctx *)arg;
+	struct tcp_comm_ctx *ctx = (struct tcp_comm_ctx *)arg;
 
 	if (err != ERR_OK || client_pcb == NULL) {
 		DEBUG_printf("Failure in accept\n");
@@ -220,7 +479,7 @@ static err_t tcp_server_accept(void *arg, struct tcp_pcb *client_pcb, err_t err)
 	return ERR_OK;
 }
 
-static err_t tcp_server_listen(struct tcp_ctx *ctx)
+static err_t tcp_server_listen(struct tcp_comm_ctx *ctx)
 {
 	DEBUG_printf("Starting server at %s on port %u\n", ip4addr_ntoa(netif_ip4_addr(netif_list)), TCP_PORT);
 
@@ -251,6 +510,34 @@ static err_t tcp_server_listen(struct tcp_ctx *ctx)
 	return ERR_OK;
 }
 
+static uint32_t handle_sync(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
+{
+	return RSP_SYNC;
+}
+
+const struct comm_command util_sync_cmd = {
+	.opcode = CMD_SYNC,
+	.nargs = 0,
+	.resp_nargs = 0,
+	.size = NULL,
+	.handle = &handle_sync,
+};
+
+static void tcp_comm_init(struct tcp_comm_ctx *ctx, const struct comm_command *const *cmds,
+		unsigned int n_cmds, uint32_t sync_opcode)
+{
+	unsigned int i;
+	for (i = 0; i < n_cmds; i++) {
+		assert(cmds[i]->nargs <= MAX_NARG);
+		assert(cmds[i]->resp_nargs <= MAX_NARG);
+	}
+
+	memset(ctx, 0, sizeof(*ctx));
+	ctx->cmds = cmds;
+	ctx->n_cmds = n_cmds;
+	ctx->sync_opcode = sync_opcode;
+}
+
 int main()
 {
 	stdio_init_all();
@@ -272,7 +559,12 @@ int main()
 		printf("Connected.\n");
 	}
 
-	struct tcp_ctx tcp = { 0 };
+	struct tcp_comm_ctx tcp;
+	const struct comm_command *cmds[] = {
+		&util_sync_cmd,
+	};
+
+	tcp_comm_init(&tcp, cmds, 1, CMD_SYNC);
 
 	for ( ; ; ) {
 		err_t err = tcp_server_listen(&tcp);
@@ -283,7 +575,8 @@ int main()
 		}
 
 		while (!tcp.serv_done) {
-			sleep_ms(1000);
+			cyw43_arch_poll();
+			sleep_ms(10);
 		}
 	}
 
