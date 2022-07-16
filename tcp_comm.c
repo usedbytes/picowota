@@ -382,16 +382,27 @@ static err_t tcp_comm_client_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *
 	if (p->tot_len > 0) {
 		DEBUG_printf("tcp_comm_server_recv %d err %d\n", p->tot_len, err);
 
-		size_t to_copy = p->tot_len > ctx->rx_bytes_remaining ? ctx->rx_bytes_remaining : p->tot_len;
+		if (p->tot_len > ctx->rx_bytes_remaining) {
+			DEBUG_printf("more data than expected: %d vs %d\n", p->tot_len, ctx->rx_bytes_remaining);
+			// TODO: Invoking the error response state here feels
+			// like a bit of a layering violation, but this is a
+			// protocol error, rather than a failure in the stack
+			// somewhere, so it's nice to try and report it rather
+			// than just dropping the connection.
+			if (tcp_comm_error_begin(ctx)) {
+				return tcp_comm_client_complete(ctx, ERR_ARG);
+			}
+			return ERR_OK;
+		}
 
 		// Receive the buffer
-		if (pbuf_copy_partial(p, ctx->buf + ctx->rx_bytes_received, to_copy, 0) != to_copy) {
+		if (pbuf_copy_partial(p, ctx->buf + ctx->rx_bytes_received, p->tot_len, 0) != p->tot_len) {
 			DEBUG_printf("wrong copy len\n");
 			return tcp_comm_client_complete(ctx, ERR_ARG);
 		}
 
-		ctx->rx_bytes_received += to_copy;
-		ctx->rx_bytes_remaining -= to_copy;
+		ctx->rx_bytes_received += p->tot_len;
+		ctx->rx_bytes_remaining -= p->tot_len;
 		tcp_recved(tpcb, p->tot_len);
 
 		if (ctx->rx_bytes_remaining == 0) {
