@@ -10,6 +10,7 @@ pico_sdk_init()
 add_executable(picowota
 	main.c
 	creds.c
+	tcp_comm.c
 )
 
 pico_enable_stdio_usb(picowota 1)
