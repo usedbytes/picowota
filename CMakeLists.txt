@@ -20,6 +20,11 @@ pico_add_extra_outputs(picowota)
 target_include_directories(picowota PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
 target_link_libraries(picowota
+	cmsis_core
+	hardware_dma
+	hardware_flash
+	hardware_resets
+	hardware_structs
 	pico_cyw43_arch_lwip_poll
 	pico_stdlib
 )

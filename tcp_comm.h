@@ -9,6 +9,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define TCP_COMM_MAX_DATA_LEN 1024
+#define TCP_COMM_RSP_OK       (('O' << 0) | ('K' << 8) | ('O' << 16) | ('K' << 24))
+#define TCP_COMM_RSP_ERR      (('E' << 0) | ('R' << 8) | ('R' << 16) | ('!' << 24))
+
+
 struct comm_command {
 	uint32_t opcode;
 	uint32_t nargs;

@@ -19,10 +19,6 @@
 #define POLL_TIME_S 5
 
 #define COMM_MAX_NARG     5
-#define COMM_MAX_DATA_LEN 1024
-
-#define COMM_RSP_OK       (('O' << 0) | ('K' << 8) | ('O' << 16) | ('K' << 24))
-#define COMM_RSP_ERR      (('E' << 0) | ('R' << 8) | ('R' << 16) | ('!' << 24))
 
 enum conn_state {
 	CONN_STATE_WAIT_FOR_SYNC,
@@ -41,7 +37,7 @@ struct tcp_comm_ctx {
 	enum conn_state conn_state;
 
 	struct tcp_pcb *client_pcb;
-	uint8_t buf[(sizeof(uint32_t) * (1 + COMM_MAX_NARG)) + COMM_MAX_DATA_LEN];
+	uint8_t buf[(sizeof(uint32_t) * (1 + COMM_MAX_NARG)) + TCP_COMM_MAX_DATA_LEN];
 	uint16_t rx_bytes_received;
 	uint16_t rx_bytes_remaining;
 
@@ -75,7 +71,7 @@ static const struct comm_command *find_command_desc(struct tcp_comm_ctx *ctx, ui
 
 static bool is_error(uint32_t status)
 {
-	return status == COMM_RSP_ERR;
+	return status == TCP_COMM_RSP_ERR;
 }
 
 static int tcp_comm_sync_begin(struct tcp_comm_ctx *ctx);
@@ -194,7 +190,7 @@ static int tcp_comm_data_complete(struct tcp_comm_ctx *ctx)
 		*COMM_BUF_OPCODE(ctx->buf) = status;
 	} else {
 		// TODO: Should we just assert(desc->handle)?
-		*COMM_BUF_OPCODE(ctx->buf) = COMM_RSP_OK;
+		*COMM_BUF_OPCODE(ctx->buf) = TCP_COMM_RSP_OK;
 	}
 
 	return tcp_comm_response_begin(ctx);
@@ -220,7 +216,7 @@ static int tcp_comm_error_begin(struct tcp_comm_ctx *ctx)
 	ctx->tx_bytes_sent = 0;
 	ctx->tx_bytes_remaining = sizeof(uint32_t);
 
-	*COMM_BUF_OPCODE(ctx->buf) = COMM_RSP_ERR;
+	*COMM_BUF_OPCODE(ctx->buf) = TCP_COMM_RSP_ERR;
 
 	err_t err = tcp_write(ctx->client_pcb, ctx->buf, ctx->tx_bytes_remaining, 0);
 	if (err != ERR_OK) {
