@@ -37,9 +37,13 @@ struct tcp_comm_ctx {
 	enum conn_state conn_state;
 
 	struct tcp_pcb *client_pcb;
+	// Note: sizeof(buf) is used elsewhere, so if this is changed to not
+	// be an array, those will need updating
 	uint8_t buf[(sizeof(uint32_t) * (1 + COMM_MAX_NARG)) + TCP_COMM_MAX_DATA_LEN];
+
+	uint16_t rx_start_offs;
 	uint16_t rx_bytes_received;
-	uint16_t rx_bytes_remaining;
+	uint16_t rx_bytes_needed;
 
 	uint16_t tx_bytes_sent;
 	uint16_t tx_bytes_remaining;
@@ -89,10 +93,7 @@ static int tcp_comm_error_begin(struct tcp_comm_ctx *ctx);
 static int tcp_comm_sync_begin(struct tcp_comm_ctx *ctx)
 {
 	ctx->conn_state = CONN_STATE_WAIT_FOR_SYNC;
-	ctx->rx_bytes_received = 0;
-	ctx->rx_bytes_remaining = sizeof(uint32_t);
-
-	DEBUG_printf("sync_begin %d\n", ctx->rx_bytes_remaining);
+	ctx->rx_bytes_needed = sizeof(uint32_t);
 }
 
 static int tcp_comm_sync_complete(struct tcp_comm_ctx *ctx)
@@ -108,8 +109,7 @@ static int tcp_comm_sync_complete(struct tcp_comm_ctx *ctx)
 static int tcp_comm_opcode_begin(struct tcp_comm_ctx *ctx)
 {
 	ctx->conn_state = CONN_STATE_READ_OPCODE;
-	ctx->rx_bytes_received = 0;
-	ctx->rx_bytes_remaining = sizeof(uint32_t);
+	ctx->rx_bytes_needed = sizeof(uint32_t);
 
 	return 0;
 }
@@ -130,8 +130,7 @@ static int tcp_comm_opcode_complete(struct tcp_comm_ctx *ctx)
 static int tcp_comm_args_begin(struct tcp_comm_ctx *ctx)
 {
 	ctx->conn_state = CONN_STATE_READ_ARGS;
-	ctx->rx_bytes_received = 0;
-	ctx->rx_bytes_remaining = ctx->cmd->nargs * sizeof(uint32_t);
+	ctx->rx_bytes_needed = ctx->cmd->nargs * sizeof(uint32_t);
 
 	if (ctx->cmd->nargs == 0) {
 		return tcp_comm_args_complete(ctx);
@@ -163,8 +162,7 @@ static int tcp_comm_data_begin(struct tcp_comm_ctx *ctx, uint32_t data_len)
 	const struct comm_command *cmd = ctx->cmd;
 
 	ctx->conn_state = CONN_STATE_READ_DATA;
-	ctx->rx_bytes_received = 0;
-	ctx->rx_bytes_remaining = data_len;
+	ctx->rx_bytes_needed = data_len;
 
 	if (data_len == 0) {
 		return tcp_comm_data_complete(ctx);
@@ -378,8 +376,10 @@ static err_t tcp_comm_client_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *
 	if (p->tot_len > 0) {
 		DEBUG_printf("tcp_comm_server_recv %d err %d\n", p->tot_len, err);
 
-		if (p->tot_len > ctx->rx_bytes_remaining) {
-			DEBUG_printf("more data than expected: %d vs %d\n", p->tot_len, ctx->rx_bytes_remaining);
+		if (p->tot_len > (sizeof(ctx->buf) - ctx->rx_bytes_received)) {
+			// Doesn't fit in buffer at all. Protocol error.
+			DEBUG_printf("not enough space in buffer: %d vs %d\n", p->tot_len, sizeof(ctx->buf) - ctx->rx_bytes_received);
+
 			// TODO: Invoking the error response state here feels
 			// like a bit of a layering violation, but this is a
 			// protocol error, rather than a failure in the stack
@@ -389,22 +389,39 @@ static err_t tcp_comm_client_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *
 				return tcp_comm_client_complete(ctx, ERR_ARG);
 			}
 			return ERR_OK;
+		} else if (p->tot_len > (sizeof(ctx->buf) - (ctx->rx_start_offs + ctx->rx_bytes_received))) {
+			// There will be space, but we need to shift the data back
+			// to the start of the buffer
+			DEBUG_printf("memmove %d bytes to make space for %d bytes\n", ctx->rx_bytes_received, p->tot_len);
+			memmove(ctx->buf, ctx->buf + ctx->rx_start_offs, ctx->rx_bytes_received);
+			ctx->rx_start_offs = 0;
 		}
 
-		// Receive the buffer
-		if (pbuf_copy_partial(p, ctx->buf + ctx->rx_bytes_received, p->tot_len, 0) != p->tot_len) {
+		uint8_t *dst = ctx->buf + ctx->rx_start_offs + ctx->rx_bytes_received;
+
+		// We can always handle the full packet
+		if (pbuf_copy_partial(p, dst, p->tot_len, 0) != p->tot_len) {
 			DEBUG_printf("wrong copy len\n");
 			return tcp_comm_client_complete(ctx, ERR_ARG);
 		}
 
 		ctx->rx_bytes_received += p->tot_len;
-		ctx->rx_bytes_remaining -= p->tot_len;
 		tcp_recved(tpcb, p->tot_len);
 
-		if (ctx->rx_bytes_remaining == 0) {
+		while (ctx->rx_bytes_received >= ctx->rx_bytes_needed) {
+			uint16_t consumed = ctx->rx_bytes_needed;
+
 			int res = tcp_comm_rx_complete(ctx);
 			if (res) {
 				return tcp_comm_client_complete(ctx, ERR_ARG);
+			}
+
+			ctx->rx_start_offs += consumed;
+			ctx->rx_bytes_received -= consumed;
+
+			if (ctx->rx_bytes_received == 0) {
+				ctx->rx_start_offs = 0;
+				break;
 			}
 		}
 	}
@@ -427,7 +444,7 @@ static void tcp_comm_client_err(void *arg, err_t err)
 
 	ctx->client_pcb = NULL;
 	ctx->conn_state = CONN_STATE_CLOSED;
-	ctx->rx_bytes_remaining = 0;
+	ctx->rx_bytes_needed = 0;
 	cyw43_arch_gpio_put (0, false);
 }
 
