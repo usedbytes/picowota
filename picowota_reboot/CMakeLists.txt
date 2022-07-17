@@ -9,5 +9,6 @@ target_sources(picowota_reboot INTERFACE
 )
 
 target_link_libraries(picowota_reboot INTERFACE
+	cmsis_core
 	hardware_structs
 )
