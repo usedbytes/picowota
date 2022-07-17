@@ -27,6 +27,16 @@
 
 #include "tcp_comm.h"
 
+#ifdef DEBUG
+#include <stdio.h>
+#include "pico/stdio_usb.h"
+#define DBG_PRINTF_INIT() stdio_usb_init()
+#define DBG_PRINTF(...) printf(__VA_ARGS__)
+#else
+#define DBG_PRINTF_INIT() { }
+#define DBG_PRINTF(...) { }
+#endif
+
 extern const char *wifi_ssid;
 extern const char *wifi_pass;
 critical_section_t critical_section;
@@ -511,23 +521,21 @@ struct comm_command reboot_cmd = {
 
 int main()
 {
-	stdio_init_all();
-
-	sleep_ms(1000);
+	DBG_PRINTF_INIT();
 
 	if (cyw43_arch_init()) {
-		printf("failed to initialise\n");
+		DBG_PRINTF("failed to initialise\n");
 		return 1;
 	}
 
 	cyw43_arch_enable_sta_mode();
 
-	printf("Connecting to WiFi...\n");
+	DBG_PRINTF("Connecting to WiFi...\n");
 	if (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-		printf("failed to connect.\n");
+		DBG_PRINTF("failed to connect.\n");
 		return 1;
 	} else {
-		printf("Connected.\n");
+		DBG_PRINTF("Connected.\n");
 	}
 
 	critical_section_init(&critical_section);
@@ -550,7 +558,7 @@ int main()
 	for ( ; ; ) {
 		err_t err = tcp_comm_listen(tcp, TCP_PORT);
 		if (err != ERR_OK) {
-			printf("Failed to start server: %d\n", err);
+			DBG_PRINTF("Failed to start server: %d\n", err);
 			sleep_ms(1000);
 			continue;
 		}

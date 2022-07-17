@@ -16,6 +16,7 @@ add_executable(picowota
 pico_enable_stdio_usb(picowota 1)
 
 pico_add_extra_outputs(picowota)
+set_target_properties(picowota PROPERTIES COMPILE_FLAGS "-Wall -Os")
 
 target_include_directories(picowota PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 

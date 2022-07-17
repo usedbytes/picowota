@@ -15,7 +15,13 @@
 
 #include "tcp_comm.h"
 
-#define DEBUG_printf printf
+#ifdef DEBUG
+#include <stdio.h>
+#define DEBUG_printf(...) printf(__VA_ARGS__)
+#else
+#define DEBUG_printf(...) { }
+#endif
+
 #define POLL_TIME_S 5
 
 #define COMM_MAX_NARG     5
@@ -94,6 +100,8 @@ static int tcp_comm_sync_begin(struct tcp_comm_ctx *ctx)
 {
 	ctx->conn_state = CONN_STATE_WAIT_FOR_SYNC;
 	ctx->rx_bytes_needed = sizeof(uint32_t);
+
+	return 0;
 }
 
 static int tcp_comm_sync_complete(struct tcp_comm_ctx *ctx)
@@ -159,15 +167,12 @@ static int tcp_comm_args_complete(struct tcp_comm_ctx *ctx)
 
 static int tcp_comm_data_begin(struct tcp_comm_ctx *ctx, uint32_t data_len)
 {
-	const struct comm_command *cmd = ctx->cmd;
-
 	ctx->conn_state = CONN_STATE_READ_DATA;
 	ctx->rx_bytes_needed = data_len;
 
 	if (data_len == 0) {
 		return tcp_comm_data_complete(ctx);
 	}
-
 
 	return 0;
 }
