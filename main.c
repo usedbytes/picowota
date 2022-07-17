@@ -11,8 +11,9 @@
 #include <stdlib.h>
 
 #include "RP2040.h"
-#include "pico/time.h"
 #include "pico/critical_section.h"
+#include "pico/time.h"
+#include "pico/util/queue.h"
 #include "hardware/dma.h"
 #include "hardware/flash.h"
 #include "hardware/structs/dma.h"
@@ -40,6 +41,27 @@
 extern const char *wifi_ssid;
 extern const char *wifi_pass;
 critical_section_t critical_section;
+
+#define EVENT_QUEUE_LENGTH 8
+queue_t event_queue;
+
+enum event_type {
+	EVENT_TYPE_REBOOT = 1,
+	EVENT_TYPE_GO,
+	EVENT_TYPE_SERVER_DONE,
+};
+
+struct event {
+	enum event_type type;
+	union {
+		struct {
+			bool to_bootloader;
+		} reboot;
+		struct {
+			uint32_t vtor;
+		} go;
+	};
+};
 
 #define BOOTLOADER_ENTRY_PIN 15
 #define BOOTLOADER_ENTRY_MAGIC 0xb105f00d
@@ -434,15 +456,18 @@ static void jump_to_vtor(uint32_t vtor)
 
 static uint32_t handle_go(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
-	disable_interrupts();
+	struct event ev = {
+		.type = EVENT_TYPE_GO,
+		.go = {
+			.vtor = args_in[0],
+		},
+	};
 
-	reset_peripherals();
+	if (!queue_try_add(&event_queue, &ev)) {
+		return TCP_COMM_RSP_ERR;
+	}
 
-	jump_to_vtor(args_in[0]);
-
-	while(1);
-
-	return TCP_COMM_RSP_ERR;
+	return TCP_COMM_RSP_OK;
 }
 
 struct comm_command go_cmd = {
@@ -503,10 +528,18 @@ static uint32_t size_reboot(uint32_t *args_in, uint32_t *data_len_out, uint32_t 
 
 static uint32_t handle_reboot(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
-	// Will never return
-	do_reboot(args_in[0]);
+	struct event ev = {
+		.type = EVENT_TYPE_REBOOT,
+		.reboot = {
+			.to_bootloader = !!args_in[0],
+		},
+	};
 
-	return TCP_COMM_RSP_ERR;
+	if (!queue_try_add(&event_queue, &ev)) {
+		return TCP_COMM_RSP_ERR;
+	}
+
+	return TCP_COMM_RSP_OK;
 }
 
 struct comm_command reboot_cmd = {
@@ -521,7 +554,11 @@ struct comm_command reboot_cmd = {
 
 int main()
 {
+	err_t err;
+
 	DBG_PRINTF_INIT();
+
+	queue_init(&event_queue, sizeof(struct event), EVENT_QUEUE_LENGTH);
 
 	if (cyw43_arch_init()) {
 		DBG_PRINTF("failed to initialise\n");
@@ -555,18 +592,40 @@ int main()
 
 	struct tcp_comm_ctx *tcp = tcp_comm_new(cmds, sizeof(cmds) / sizeof(cmds[0]), CMD_SYNC);
 
+	struct event ev = {
+		.type = EVENT_TYPE_SERVER_DONE,
+	};
+
+	queue_add_blocking(&event_queue, &ev);
+
 	for ( ; ; ) {
-		err_t err = tcp_comm_listen(tcp, TCP_PORT);
-		if (err != ERR_OK) {
-			DBG_PRINTF("Failed to start server: %d\n", err);
-			sleep_ms(1000);
-			continue;
+		while (queue_try_remove(&event_queue, &ev)) {
+			switch (ev.type) {
+			case EVENT_TYPE_SERVER_DONE:
+				err = tcp_comm_listen(tcp, TCP_PORT);
+				if (err != ERR_OK) {
+					DBG_PRINTF("Failed to start server: %d\n", err);
+				}
+				break;
+			case EVENT_TYPE_REBOOT:
+				tcp_comm_server_close(tcp);
+				cyw43_arch_deinit();
+				do_reboot(ev.reboot.to_bootloader);
+				/* Should never get here */
+				break;
+			case EVENT_TYPE_GO:
+				tcp_comm_server_close(tcp);
+				cyw43_arch_deinit();
+				disable_interrupts();
+				reset_peripherals();
+				jump_to_vtor(ev.go.vtor);
+				/* Should never get here */
+				break;
+			};
 		}
 
-		while (!tcp_comm_server_done(tcp)) {
-			cyw43_arch_poll();
-			sleep_ms(1);
-		}
+		cyw43_arch_poll();
+		sleep_ms(5);
 	}
 
 	cyw43_arch_deinit();

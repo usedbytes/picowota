@@ -29,4 +29,5 @@ target_link_libraries(picowota
 	pico_cyw43_arch_lwip_poll
 	pico_stdlib
 	pico_sync
+	pico_util
 )
