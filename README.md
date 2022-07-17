@@ -123,7 +123,7 @@ libraries don't give a mechanism to do so.
 
 I've raised https://github.com/raspberrypi/pico-sdk/issues/928 for consideration.
 
-### Expose and access point, rather than connecting to one
+### Expose an access point, rather than connecting to one
 
 It would perhaps be better if the bootloader set up an access point, rather than
 trying to connect to an existing network - or even better, provide the option.
