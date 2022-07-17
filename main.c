@@ -552,9 +552,32 @@ struct comm_command reboot_cmd = {
 	.handle = &handle_reboot,
 };
 
+static bool should_stay_in_bootloader()
+{
+	bool wd_says_so = (watchdog_hw->scratch[5] == BOOTLOADER_ENTRY_MAGIC) &&
+		(watchdog_hw->scratch[6] == ~BOOTLOADER_ENTRY_MAGIC);
+
+	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
+}
+
 int main()
 {
 	err_t err;
+
+	gpio_init(BOOTLOADER_ENTRY_PIN);
+	gpio_pull_up(BOOTLOADER_ENTRY_PIN);
+	gpio_set_dir(BOOTLOADER_ENTRY_PIN, 0);
+
+	sleep_ms(10);
+
+	struct image_header *hdr = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
+
+	if (!should_stay_in_bootloader() && image_header_ok(hdr)) {
+		uint32_t vtor = *((uint32_t *)(XIP_BASE + IMAGE_HEADER_OFFSET));
+		disable_interrupts();
+		reset_peripherals();
+		jump_to_vtor(vtor);
+	}
 
 	DBG_PRINTF_INIT();
 
