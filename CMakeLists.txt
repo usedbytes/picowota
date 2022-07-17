@@ -35,7 +35,6 @@ pico_sdk_init()
 
 add_executable(picowota
 	main.c
-	creds.c
 	tcp_comm.c
 )
 
@@ -71,6 +70,27 @@ target_link_libraries(picowota
 	pico_util
 	picowota_reboot
 )
+
+if (DEFINED ENV{PICOWOTA_WIFI_SSID} AND (NOT PICOWOTA_WIFI_SSID))
+	set(PICOWOTA_WIFI_SSID $ENV{PICOWOTA_WIFI_SSID})
+	message("Using PICOWOTA_WIFI_SSID from environment ('${PICOWOTA_WIFI_SSID}')")
+endif ()
+
+if (DEFINED ENV{PICOWOTA_WIFI_PASS} AND (NOT PICOWOTA_WIFI_PASS))
+	set(PICOWOTA_WIFI_PASS $ENV{PICOWOTA_WIFI_PASS})
+	message("Using PICOWOTA_WIFI_PASS from environment (hidden)")
+endif ()
+
+if ((NOT PICOWOTA_WIFI_SSID) OR (NOT PICOWOTA_WIFI_PASS))
+        message(FATAL_ERROR
+		"WiFi SSID/Pass not set, please set PICOWOTA_WIFI_SSID/PICOWOTA_WIFI_PASS."
+	)
+endif ()
+
+# TODO: This causes a full rebuild if they change, configure_file might
+# be better.
+target_compile_definitions(picowota PUBLIC PICOWOTA_WIFI_SSID=${PICOWOTA_WIFI_SSID})
+target_compile_definitions(picowota PUBLIC PICOWOTA_WIFI_PASS=${PICOWOTA_WIFI_PASS})
 
 # Provide a helper to build a standalone target
 function(picowota_build_standalone NAME)

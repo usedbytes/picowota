@@ -40,8 +40,21 @@
 #define DBG_PRINTF(...) { }
 #endif
 
-extern const char *wifi_ssid;
-extern const char *wifi_pass;
+#define QUOTE(name) #name
+#define STR(macro) QUOTE(macro)
+
+#ifndef PICOWOTA_WIFI_SSID
+#warning "PICOWOTA_WIFI_SSID not defined"
+#else
+const char *wifi_ssid = STR(PICOWOTA_WIFI_SSID);
+#endif
+
+#ifndef PICOWOTA_WIFI_PASS
+#warning "PICOWOTA_WIFI_PASS not defined"
+#else
+const char *wifi_pass = STR(PICOWOTA_WIFI_PASS);
+#endif
+
 critical_section_t critical_section;
 
 #define EVENT_QUEUE_LENGTH 8
