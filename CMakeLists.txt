@@ -20,6 +20,8 @@ set_target_properties(picowota PROPERTIES COMPILE_FLAGS "-Wall -Os")
 
 target_include_directories(picowota PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
+add_subdirectory(picowota_reboot)
+
 target_link_libraries(picowota
 	cmsis_core
 	hardware_dma
@@ -30,4 +32,5 @@ target_link_libraries(picowota
 	pico_stdlib
 	pico_sync
 	pico_util
+	picowota_reboot
 )

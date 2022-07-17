@@ -28,6 +28,8 @@
 
 #include "tcp_comm.h"
 
+#include "picowota/reboot.h"
+
 #ifdef DEBUG
 #include <stdio.h>
 #include "pico/stdio_usb.h"
@@ -64,7 +66,6 @@ struct event {
 };
 
 #define BOOTLOADER_ENTRY_PIN 15
-#define BOOTLOADER_ENTRY_MAGIC 0xb105f00d
 
 #define TCP_PORT 4242
 
@@ -501,23 +502,6 @@ const struct comm_command info_cmd = {
 	.handle = &handle_info,
 };
 
-static void do_reboot(bool to_bootloader)
-{
-	hw_clear_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_ENABLE_BITS);
-	if (to_bootloader) {
-		watchdog_hw->scratch[5] = BOOTLOADER_ENTRY_MAGIC;
-		watchdog_hw->scratch[6] = ~BOOTLOADER_ENTRY_MAGIC;
-	} else {
-		watchdog_hw->scratch[5] = 0;
-		watchdog_hw->scratch[6] = 0;
-	}
-	watchdog_reboot(0, 0, 0);
-	while (1) {
-		tight_loop_contents();
-		asm("");
-	}
-}
-
 static uint32_t size_reboot(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out)
 {
 	*data_len_out = 0;
@@ -554,8 +538,8 @@ struct comm_command reboot_cmd = {
 
 static bool should_stay_in_bootloader()
 {
-	bool wd_says_so = (watchdog_hw->scratch[5] == BOOTLOADER_ENTRY_MAGIC) &&
-		(watchdog_hw->scratch[6] == ~BOOTLOADER_ENTRY_MAGIC);
+	bool wd_says_so = (watchdog_hw->scratch[5] == PICOWOTA_BOOTLOADER_ENTRY_MAGIC) &&
+		(watchdog_hw->scratch[6] == ~PICOWOTA_BOOTLOADER_ENTRY_MAGIC);
 
 	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
 }
@@ -633,7 +617,7 @@ int main()
 			case EVENT_TYPE_REBOOT:
 				tcp_comm_server_close(tcp);
 				cyw43_arch_deinit();
-				do_reboot(ev.reboot.to_bootloader);
+				picowota_reboot(ev.reboot.to_bootloader);
 				/* Should never get here */
 				break;
 			case EVENT_TYPE_GO:
