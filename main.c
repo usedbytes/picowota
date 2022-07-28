@@ -40,6 +40,11 @@
 #define DBG_PRINTF(...) { }
 #endif
 
+#if PICOWOTA_WIFI_AP == 1
+#include "dhcpserver.h"
+static dhcp_server_t dhcp_server;
+#endif
+
 #define QUOTE(name) #name
 #define STR(macro) QUOTE(macro)
 
@@ -557,6 +562,14 @@ static bool should_stay_in_bootloader()
 	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
 }
 
+static void network_deinit()
+{
+#if PICOWOTA_WIFI_AP == 1
+	dhcp_server_deinit(&dhcp_server);
+#endif
+	cyw43_arch_deinit();
+}
+
 int main()
 {
 	err_t err;
@@ -585,6 +598,18 @@ int main()
 		return 1;
 	}
 
+#if PICOWOTA_WIFI_AP == 1
+	cyw43_arch_enable_ap_mode(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK);
+	DBG_PRINTF("Enabled the WiFi AP.\n");
+
+	ip4_addr_t gw, mask;
+	IP4_ADDR(&gw, 192, 168, 4, 1);
+	IP4_ADDR(&mask, 255, 255, 255, 0);
+
+	dhcp_server_t dhcp_server;
+	dhcp_server_init(&dhcp_server, &gw, &mask);
+	DBG_PRINTF("Started the DHCP server.\n");
+#else
 	cyw43_arch_enable_sta_mode();
 
 	DBG_PRINTF("Connecting to WiFi...\n");
@@ -594,6 +619,7 @@ int main()
 	} else {
 		DBG_PRINTF("Connected.\n");
 	}
+#endif
 
 	critical_section_init(&critical_section);
 
@@ -629,13 +655,13 @@ int main()
 				break;
 			case EVENT_TYPE_REBOOT:
 				tcp_comm_server_close(tcp);
-				cyw43_arch_deinit();
+				network_deinit();
 				picowota_reboot(ev.reboot.to_bootloader);
 				/* Should never get here */
 				break;
 			case EVENT_TYPE_GO:
 				tcp_comm_server_close(tcp);
-				cyw43_arch_deinit();
+				network_deinit();
 				disable_interrupts();
 				reset_peripherals();
 				jump_to_vtor(ev.go.vtor);
@@ -648,6 +674,6 @@ int main()
 		sleep_ms(5);
 	}
 
-	cyw43_arch_deinit();
+	network_deinit();
 	return 0;
 }
