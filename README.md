@@ -25,15 +25,16 @@ Then modifiy your project's CMakeLists.txt to include the `picowota` directory:
 add_subdirectory(picowota)
 ```
 
-`picowota` (currently) connects to an existing WiFi network, so you need to
-set the SSID and password for the network to connect to.
+`picowota` either connects to an existing WiFi network (by default) or
+creates one, in both cases with the given SSID and password.
 
-You can either export the `PICOWOTA_WIFI_SSID` and `PICOWOTA_WIFI_PASS`
-environment variables, or set the CMake variables with the same name:
+You can either provide the following as environment variables, or set them
+as CMake variables:
 
 ```
-set(PICOWOTA_WIFI_SSID MyNetworkName)
-set(PICOWOTA_WIFI_PASS MyPassw0rd)
+PICOWOTA_WIFI_SSID # The WiFi network SSID
+PICOWOTA_WIFI_PASS # The WiFi network password
+PICOWOTA_WIFI_AP # Optional; 0 = connect to the network, 1 = create it
 ```
 
 Then, you can either build just your standalone app binary (suitable for
@@ -90,6 +91,10 @@ As long as the Pico is "in" the `picowota` bootloader (i.e. because there's no
 valid app code uploaded yet, or your app called `picowota_reboot(true);`), you
 can upload an app `.elf` file which was built by `picowota_build_standalone()`:
 
+If using the AP mode, the Pico's IP address will be (at the time of writing)
+192.168.4.1/24, and the connected device's something in the same subnet.
+Otherwise it depends on your network settings.
+
 (Assuming your Pico's IP address is 192.168.1.123):
 ```
 serial-flash tcp:192.168.1.123:4242 my_executable_name.elf
@@ -122,9 +127,3 @@ It would be nice to be able to avoid this duplication, but the Pico SDK
 libraries don't give a mechanism to do so.
 
 I've raised https://github.com/raspberrypi/pico-sdk/issues/928 for consideration.
-
-### Expose an access point, rather than connecting to one
-
-It would perhaps be better if the bootloader set up an access point, rather than
-trying to connect to an existing network - or even better, provide the option.
-I expect that wouldn't be too hard to do.
