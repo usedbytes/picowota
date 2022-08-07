@@ -36,6 +36,7 @@ pico_sdk_init()
 add_executable(picowota
 	main.c
 	tcp_comm.c
+	dhcpserver/dhcpserver.c
 )
 
 function(target_cl_options option)
@@ -51,8 +52,9 @@ target_link_options(picowota PRIVATE "LINKER:--gc-sections")
 
 pico_add_extra_outputs(picowota)
 
-# Needed so that lwip can find lwipopts.h
-target_include_directories(picowota PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+target_include_directories(picowota PRIVATE
+	${CMAKE_CURRENT_LIST_DIR} # Needed so that lwip can find lwipopts.h
+	${CMAKE_CURRENT_LIST_DIR}/dhcpserver)
 
 pico_enable_stdio_usb(picowota 1)
 
@@ -71,15 +73,22 @@ target_link_libraries(picowota
 	picowota_reboot
 )
 
-if (DEFINED ENV{PICOWOTA_WIFI_SSID} AND (NOT PICOWOTA_WIFI_SSID))
-	set(PICOWOTA_WIFI_SSID $ENV{PICOWOTA_WIFI_SSID})
-	message("Using PICOWOTA_WIFI_SSID from environment ('${PICOWOTA_WIFI_SSID}')")
-endif ()
+# Retrieves build variables from the environment if present
+function(picowota_retrieve_variable name hidden)
+	if (DEFINED ENV{${name}} AND (NOT ${name}))
+		set(${name} $ENV{${name}} PARENT_SCOPE)
+		if (hidden)
+			set(log_value "hidden")
+		else()
+			set(log_value "'$ENV{${name}}'")
+		endif()
+		message("Using ${name} from environment (${log_value})")
+	endif()
+endfunction()
 
-if (DEFINED ENV{PICOWOTA_WIFI_PASS} AND (NOT PICOWOTA_WIFI_PASS))
-	set(PICOWOTA_WIFI_PASS $ENV{PICOWOTA_WIFI_PASS})
-	message("Using PICOWOTA_WIFI_PASS from environment (hidden)")
-endif ()
+picowota_retrieve_variable(PICOWOTA_WIFI_SSID false)
+picowota_retrieve_variable(PICOWOTA_WIFI_PASS true)
+picowota_retrieve_variable(PICOWOTA_WIFI_AP false)
 
 if ((NOT PICOWOTA_WIFI_SSID) OR (NOT PICOWOTA_WIFI_PASS))
         message(FATAL_ERROR
@@ -91,6 +100,12 @@ endif ()
 # be better.
 target_compile_definitions(picowota PUBLIC PICOWOTA_WIFI_SSID=${PICOWOTA_WIFI_SSID})
 target_compile_definitions(picowota PUBLIC PICOWOTA_WIFI_PASS=${PICOWOTA_WIFI_PASS})
+
+# Use the WiFi AP mode upon request
+if (PICOWOTA_WIFI_AP)
+	target_compile_definitions(picowota PUBLIC PICOWOTA_WIFI_AP=1)
+	message("Building in WiFi AP mode.")
+endif()
 
 # Provide a helper to build a standalone target
 function(picowota_build_standalone NAME)
