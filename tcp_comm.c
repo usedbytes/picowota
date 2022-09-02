@@ -531,8 +531,8 @@ struct tcp_comm_ctx *tcp_comm_new(const struct comm_command *const *cmds,
 
 	unsigned int i;
 	for (i = 0; i < n_cmds; i++) {
-		assert(cmds[i]->nargs <= MAX_NARG);
-		assert(cmds[i]->resp_nargs <= MAX_NARG);
+		assert(cmds[i]->nargs <= COMM_MAX_NARG);
+		assert(cmds[i]->resp_nargs <= COMM_MAX_NARG);
 	}
 
 	ctx->cmds = cmds;
