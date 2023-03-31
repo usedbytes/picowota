@@ -107,6 +107,11 @@ if (PICOWOTA_WIFI_AP)
 	message("Building in WiFi AP mode.")
 endif()
 
+if (BOOTLOADER_ENTRY_PIN)
+	target_compile_definitions(picowota PUBLIC BOOTLOADER_ENTRY_PIN=${BOOTLOADER_ENTRY_PIN})
+	message("Building with BOOTLOADER_ENTRY_PIN.")
+endif()
+
 # Provide a helper to build a standalone target
 function(picowota_build_standalone NAME)
 	get_target_property(PICOWOTA_SRC_DIR picowota SOURCE_DIR)

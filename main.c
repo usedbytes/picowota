@@ -83,7 +83,10 @@ struct event {
 	};
 };
 
+#ifndef BOOTLOADER_ENTRY_PIN
+#warning "BOOTLOADER_ENTRY_PIN not defined"
 #define BOOTLOADER_ENTRY_PIN 15
+#endif
 
 #define TCP_PORT 4242
 

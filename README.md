@@ -35,6 +35,7 @@ as CMake variables:
 PICOWOTA_WIFI_SSID # The WiFi network SSID
 PICOWOTA_WIFI_PASS # The WiFi network password
 PICOWOTA_WIFI_AP # Optional; 0 = connect to the network, 1 = create it
+BOOTLOADER_ENTRY_PIN # Optional; default use pin 15, you can change it
 ```
 
 Then, you can either build just your standalone app binary (suitable for
