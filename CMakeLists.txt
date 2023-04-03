@@ -89,6 +89,7 @@ endfunction()
 picowota_retrieve_variable(PICOWOTA_WIFI_SSID false)
 picowota_retrieve_variable(PICOWOTA_WIFI_PASS true)
 picowota_retrieve_variable(PICOWOTA_WIFI_AP false)
+picowota_retrieve_variable(PICOWOTA_ENTRY_PIN false)
 
 if ((NOT PICOWOTA_WIFI_SSID) OR (NOT PICOWOTA_WIFI_PASS))
         message(FATAL_ERROR
@@ -107,9 +108,9 @@ if (PICOWOTA_WIFI_AP)
 	message("Building in WiFi AP mode.")
 endif()
 
-if (BOOTLOADER_ENTRY_PIN)
-	target_compile_definitions(picowota PUBLIC BOOTLOADER_ENTRY_PIN=${BOOTLOADER_ENTRY_PIN})
-	message("Building with BOOTLOADER_ENTRY_PIN.")
+if (PICOWOTA_ENTRY_PIN)
+	target_compile_definitions(picowota PUBLIC PICOWOTA_ENTRY_PIN=${PICOWOTA_ENTRY_PIN})
+	message("Building with custom PICOWOTA_ENTRY_PIN.")
 endif()
 
 # Provide a helper to build a standalone target
