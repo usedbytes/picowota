@@ -83,7 +83,11 @@ struct event {
 	};
 };
 
+#ifndef PICOWOTA_ENTRY_PIN
 #define BOOTLOADER_ENTRY_PIN 15
+#else
+#define BOOTLOADER_ENTRY_PIN PICOWOTA_ENTRY_PIN
+#endif
 
 #define TCP_PORT 4242
 
