@@ -591,6 +591,7 @@ int main()
 		disable_interrupts();
 		reset_peripherals();
 		jump_to_vtor(vtor);
+		return 0;
 	}
 
 	DBG_PRINTF_INIT();
