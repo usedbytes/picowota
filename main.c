@@ -582,8 +582,8 @@ void core1_entry()
 {
     // timout 5 minutes
     sleep_ms(1000 * 60 * 5);
-    //auto reset
-    watchdog_reboot(0, SRAM_END, 0);
+    //auto reset(to bootloader)
+    picowota_reboot(true);
 }
 #endif
 
