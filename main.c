@@ -25,6 +25,7 @@
 
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
+#include "pico/multicore.h"
 
 #include "tcp_comm.h"
 
@@ -574,6 +575,14 @@ static void network_deinit()
 	cyw43_arch_deinit();
 }
 
+void core1_entry()
+{
+    // timout 10 minutes
+    sleep_ms(1000 * 60 * 1);
+    //auto reset
+    watchdog_reboot(0, SRAM_END, 0);
+}
+
 int main()
 {
 	err_t err;
@@ -626,7 +635,9 @@ int main()
 	}
 #endif
 
-	critical_section_init(&critical_section);
+    multicore_launch_core1(core1_entry);
+
+    critical_section_init(&critical_section);
 
 	const struct comm_command *cmds[] = {
 		&sync_cmd,
