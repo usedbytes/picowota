@@ -25,7 +25,9 @@
 
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
+#if PICOWOTA_ENTRY_AUTORE == 1
 #include "pico/multicore.h"
+#endif
 
 #include "tcp_comm.h"
 
@@ -575,13 +577,15 @@ static void network_deinit()
 	cyw43_arch_deinit();
 }
 
+#if PICOWOTA_ENTRY_AUTORE == 1
 void core1_entry()
 {
-    // timout 10 minutes
-    sleep_ms(1000 * 60 * 1);
+    // timout 5 minutes
+    sleep_ms(1000 * 60 * 5);
     //auto reset
     watchdog_reboot(0, SRAM_END, 0);
 }
+#endif
 
 int main()
 {
@@ -635,7 +639,9 @@ int main()
 	}
 #endif
 
+#if PICOWOTA_ENTRY_AUTORE == 1
     multicore_launch_core1(core1_entry);
+#endif
 
     critical_section_init(&critical_section);
 
