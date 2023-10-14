@@ -194,6 +194,7 @@ static uint32_t handle_csum(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 	dma_channel_wait_for_finish_blocking(channel);
 
 	dma_sniffer_disable();
+	dma_channel_cleanup(channel);	
 	dma_channel_unclaim(channel);
 
 	*resp_args_out = dma_hw->sniff_data;
@@ -257,7 +258,8 @@ static uint32_t calc_crc32(void *ptr, uint32_t len)
 	crc = dma_hw->sniff_data ^ 0xffffffff;
 
 	dma_sniffer_disable();
-	dma_channel_unclaim(channel);
+	dma_channel_cleanup(channel);
+	dma_channel_unclaim(channel);	
 
 	return crc;
 }
