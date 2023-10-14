@@ -69,6 +69,7 @@ enum event_type {
 	EVENT_TYPE_REBOOT = 1,
 	EVENT_TYPE_GO,
 	EVENT_TYPE_SERVER_DONE,
+	EVENT_TYPE_ACTIVITY
 };
 
 struct event {
@@ -80,6 +81,9 @@ struct event {
 		struct {
 			uint32_t vtor;
 		} go;
+		struct {
+			bool active;
+		} activity;
 	};
 };
 
@@ -562,6 +566,18 @@ static bool should_stay_in_bootloader()
 	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
 }
 
+static void handle_activity(bool active)
+{
+	struct event ev = {
+		.type = EVENT_TYPE_ACTIVITY,
+		.activity = {
+			.active = active,
+		},
+	};
+
+	queue_try_add(&event_queue, &ev);
+}
+
 static void network_deinit()
 {
 #if PICOWOTA_WIFI_AP == 1
@@ -636,7 +652,7 @@ int main()
 		&reboot_cmd,
 	};
 
-	struct tcp_comm_ctx *tcp = tcp_comm_new(cmds, sizeof(cmds) / sizeof(cmds[0]), CMD_SYNC);
+	struct tcp_comm_ctx *tcp = tcp_comm_new(cmds, sizeof(cmds) / sizeof(cmds[0]), CMD_SYNC, handle_activity);
 
 	struct event ev = {
 		.type = EVENT_TYPE_SERVER_DONE,
@@ -658,6 +674,9 @@ int main()
 				network_deinit();
 				picowota_reboot(ev.reboot.to_bootloader);
 				/* Should never get here */
+				break;
+			case EVENT_TYPE_ACTIVITY:
+				cyw43_arch_gpio_put (0, ev.activity.active);
 				break;
 			case EVENT_TYPE_GO:
 				tcp_comm_server_close(tcp);
