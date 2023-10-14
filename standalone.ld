@@ -217,6 +217,10 @@ SECTIONS
         __flash_binary_end = .;
     } > FLASH
 
+    __wota_image_header_offset = ORIGIN(FLASH)+LENGTH(FLASH - 4k);
+    ASSERT( __flash_binary_end < __wota_image_header_offset, "Flash overflowed into image")
+
+
     /* stack limit is poorly named, but historically is maximum heap ptr */
     __StackLimit = ORIGIN(RAM) + LENGTH(RAM);
     __StackOneTop = ORIGIN(SCRATCH_X) + LENGTH(SCRATCH_X);

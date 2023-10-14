@@ -37,6 +37,9 @@ add_executable(picowota
 	main.c
 	tcp_comm.c
 	dhcpserver/dhcpserver.c
+	${PICO_SDK_PATH}/lib/mbedtls/library/sha256.c
+	${PICO_SDK_PATH}/lib/mbedtls/library/platform_util.c
+	${PICO_SDK_PATH}/lib/mbedtls/library/constant_time.c
 )
 
 function(target_cl_options option)
@@ -54,7 +57,9 @@ pico_add_extra_outputs(picowota)
 
 target_include_directories(picowota PRIVATE
 	${CMAKE_CURRENT_LIST_DIR} # Needed so that lwip can find lwipopts.h
-	${CMAKE_CURRENT_LIST_DIR}/dhcpserver)
+	${CMAKE_CURRENT_LIST_DIR}/dhcpserver
+	${PICO_SDK_PATH}/lib/mbedtls/include
+)
 
 pico_enable_stdio_usb(picowota 1)
 
@@ -89,6 +94,7 @@ endfunction()
 picowota_retrieve_variable(PICOWOTA_WIFI_SSID false)
 picowota_retrieve_variable(PICOWOTA_WIFI_PASS true)
 picowota_retrieve_variable(PICOWOTA_WIFI_AP false)
+picowota_retrieve_variable(PICOWOTA_FLASH_KEY true)
 
 if ((NOT PICOWOTA_WIFI_SSID) OR (NOT PICOWOTA_WIFI_PASS))
         message(FATAL_ERROR
@@ -113,6 +119,8 @@ function(picowota_build_standalone NAME)
 	pico_set_linker_script(${NAME} ${PICOWOTA_SRC_DIR}/standalone.ld)
 	pico_add_bin_output(${NAME})
 endfunction()
+
+pico_set_linker_script(picowota ${CMAKE_CURRENT_LIST_DIR}/bootloader.ld)
 
 # Provide a helper to build a combined target
 # The build process is roughly:

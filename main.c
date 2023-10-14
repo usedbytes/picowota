@@ -27,7 +27,8 @@
 #include "pico/cyw43_arch.h"
 
 #include "tcp_comm.h"
-
+#include "mbedtls/sha256.h"
+#include "mbedtls/constant_time.h"
 #include "picowota/reboot.h"
 
 #ifdef DEBUG
@@ -60,6 +61,8 @@ const char *wifi_ssid = STR(PICOWOTA_WIFI_SSID);
 const char *wifi_pass = STR(PICOWOTA_WIFI_PASS);
 #endif
 
+const char *flash_key = STR(PICOWOTA_FLASH_KEY);
+
 critical_section_t critical_section;
 
 #define EVENT_QUEUE_LENGTH 8
@@ -87,8 +90,18 @@ struct event {
 
 #define TCP_PORT 4242
 
-#define IMAGE_HEADER_OFFSET (360 * 1024)
+struct image_header {
+	uint32_t vtor;
+	uint32_t size;
+	uint32_t crc;
+	uint8_t mac[32];
+	uint8_t pad[FLASH_PAGE_SIZE - (3 * 4) - 32];
+};
+static_assert(sizeof(struct image_header) == FLASH_PAGE_SIZE, "image_header must be FLASH_PAGE_SIZE bytes");
 
+extern struct image_header __wota_image_header_offset;
+
+#define IMAGE_HEADER_OFFSET (((uint32_t)&__wota_image_header_offset) - XIP_BASE)
 #define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
@@ -365,13 +378,6 @@ struct comm_command write_cmd = {
 	.handle = &handle_write,
 };
 
-struct image_header {
-	uint32_t vtor;
-	uint32_t size;
-	uint32_t crc;
-	uint8_t pad[FLASH_PAGE_SIZE - (3 * 4)];
-};
-static_assert(sizeof(struct image_header) == FLASH_PAGE_SIZE, "image_header must be FLASH_PAGE_SIZE bytes");
 
 static bool image_header_ok(struct image_header *hdr)
 {
@@ -381,6 +387,18 @@ static bool image_header_ok(struct image_header *hdr)
 
 	// CRC has to match
 	if (calc != hdr->crc) {
+		return false;
+	}
+
+	uint8_t hash[32];
+	mbedtls_sha256_context ctx = {};
+	mbedtls_sha256_init(&ctx);
+	mbedtls_sha256_starts_ret(&ctx, 0);
+	mbedtls_sha256_update_ret(&ctx, (uint8_t*) flash_key, strlen(flash_key));
+	mbedtls_sha256_update_ret(&ctx, (void*) hdr->vtor, hdr->size);
+	mbedtls_sha256_finish(&ctx, hash);
+	mbedtls_sha256_free(&ctx);
+	if(mbedtls_ct_memcmp(hdr->mac, hash, 32) != 0) {
 		return false;
 	}
 
@@ -406,6 +424,7 @@ static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 		.size = args_in[1],
 		.crc = args_in[2],
 	};
+	memcpy(hdr.mac, data_in, 32);
 
 	if ((hdr.vtor & 0xff) || (hdr.size & 0x3)) {
 		// Must be aligned
@@ -428,14 +447,18 @@ static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 
 	return TCP_COMM_RSP_OK;
 }
-
+static uint32_t size_seal(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out)
+{
+	*data_len_out = 32;
+	return TCP_COMM_RSP_OK;
+}
 struct comm_command seal_cmd = {
 	// SEAL vtor len crc
 	// OKOK
 	.opcode = CMD_SEAL,
 	.nargs = 3,
 	.resp_nargs = 0,
-	.size = NULL,
+	.size = &size_seal,
 	.handle = &handle_seal,
 };
 
