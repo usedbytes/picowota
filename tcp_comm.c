@@ -15,6 +15,9 @@
 
 #include "tcp_comm.h"
 
+#include "mbedtls/sha256.h"
+#include "mbedtls/constant_time.h"
+
 #ifdef DEBUG
 #include <stdio.h>
 #define DEBUG_printf(...) printf(__VA_ARGS__)
@@ -27,6 +30,8 @@
 #define COMM_MAX_NARG     5
 
 enum conn_state {
+	CONN_STATE_WRITE_LOGIN,
+	CONN_STATE_HANDLE_LOGIN,
 	CONN_STATE_WAIT_FOR_SYNC,
 	CONN_STATE_READ_OPCODE,
 	CONN_STATE_READ_ARGS,
@@ -55,6 +60,8 @@ struct tcp_comm_ctx {
 	uint16_t tx_bytes_remaining;
 
 	uint32_t resp_data_len;
+
+	uint64_t nonce;
 
 	const struct comm_command *cmd;
 	const struct comm_command *const *cmds;
@@ -235,9 +242,27 @@ static int tcp_comm_response_complete(struct tcp_comm_ctx *ctx)
 	return tcp_comm_opcode_begin(ctx);
 }
 
+extern const char *flash_key;
 static int tcp_comm_rx_complete(struct tcp_comm_ctx *ctx)
 {
 	switch (ctx->conn_state) {
+	case CONN_STATE_HANDLE_LOGIN:
+	  {
+		uint8_t hash[32];
+		mbedtls_sha256_context hash_ctx = {};
+		mbedtls_sha256_init(&hash_ctx);
+		mbedtls_sha256_starts_ret(&hash_ctx, 0);
+		mbedtls_sha256_update_ret(&hash_ctx, (uint8_t *) flash_key, strlen(flash_key));
+		mbedtls_sha256_update_ret(&hash_ctx, (uint8_t *) &ctx->nonce, sizeof(ctx->nonce));
+		mbedtls_sha256_finish(&hash_ctx, hash);
+		mbedtls_sha256_free(&hash_ctx);
+		if(mbedtls_ct_memcmp(ctx->buf, hash, 32) == 0) {
+			tcp_comm_sync_begin(ctx);
+			return 0;
+		} else {
+			return -1;
+		}
+	  }
 	case CONN_STATE_WAIT_FOR_SYNC:
 		return tcp_comm_sync_complete(ctx);
 	case CONN_STATE_READ_OPCODE:
@@ -247,13 +272,17 @@ static int tcp_comm_rx_complete(struct tcp_comm_ctx *ctx)
 	case CONN_STATE_READ_DATA:
 		return tcp_comm_data_complete(ctx);
 	default:
-		return -1;
+		return -2;
 	}
 }
 
 static int tcp_comm_tx_complete(struct tcp_comm_ctx *ctx)
 {
 	switch (ctx->conn_state) {
+	case CONN_STATE_WRITE_LOGIN:
+		ctx->conn_state = CONN_STATE_HANDLE_LOGIN;
+		ctx->rx_bytes_needed = 32;
+		return tcp_comm_handle_input(ctx);
 	case CONN_STATE_WRITE_RESP:
 		return tcp_comm_response_complete(ctx);
 	case CONN_STATE_WRITE_ERROR:
@@ -460,12 +489,17 @@ static void tcp_comm_client_init(struct tcp_comm_ctx *ctx, struct tcp_pcb *pcb)
 
 	cyw43_arch_gpio_put (0, true);
 
-	tcp_comm_sync_begin(ctx);
-
+	ctx->nonce = get_rand_64();
+	ctx->conn_state = CONN_STATE_WRITE_LOGIN;
+	ctx->tx_bytes_sent = 0;
+	ctx->tx_bytes_remaining = sizeof(ctx->nonce);
+	
 	tcp_sent(pcb, tcp_comm_client_sent);
 	tcp_recv(pcb, tcp_comm_client_recv);
 	tcp_poll(pcb, tcp_comm_client_poll, POLL_TIME_S * 2);
 	tcp_err(pcb, tcp_comm_client_err);
+
+	tcp_write(ctx->client_pcb, &ctx->nonce, ctx->tx_bytes_remaining, 0);
 }
 
 static err_t tcp_comm_server_accept(void *arg, struct tcp_pcb *client_pcb, err_t err)
