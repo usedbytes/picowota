@@ -48,7 +48,7 @@ target_cl_options("-Wall")
 target_cl_options("-Os")
 target_cl_options("-ffunction-sections")
 target_cl_options("-fdata-sections")
-target_link_options(picowota PRIVATE "LINKER:--gc-sections")
+target_link_options(picowota PRIVATE "LINKER:--gc-sections,--print-memory-usage")
 
 pico_add_extra_outputs(picowota)
 
