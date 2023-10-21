@@ -83,7 +83,7 @@ struct event {
 	};
 };
 
-#define BOOTLOADER_ENTRY_PIN 15
+#define BOOTLOADER_ENTRY_PIN 28 //GPIO28_ADC2
 
 #define TCP_PORT 4242
 
