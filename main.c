@@ -30,6 +30,8 @@
 
 #include "picowota/reboot.h"
 
+#include "display_minimal.h"
+
 #ifdef DEBUG
 #include <stdio.h>
 #include "pico/stdio_usb.h"
@@ -580,6 +582,9 @@ int main()
 
 	sleep_ms(10);
 
+	// Configure others
+    display_minimal_init();
+
 	struct image_header *hdr = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
 
 	if (!should_stay_in_bootloader() && image_header_ok(hdr)) {
@@ -609,15 +614,19 @@ int main()
 	dhcp_server_t dhcp_server;
 	dhcp_server_init(&dhcp_server, &gw, &mask);
 	DBG_PRINTF("Started the DHCP server.\n");
+	write_bl_info_AP(wifi_ssid, wifi_pass);
+	
 #else
 	cyw43_arch_enable_sta_mode();
 
 	DBG_PRINTF("Connecting to WiFi...\n");
 	if (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
 		DBG_PRINTF("failed to connect.\n");
+		write_bl_info_STA(wifi_ssid, false);
 		return 1;
 	} else {
 		DBG_PRINTF("Connected.\n");
+		write_bl_info_STA(wifi_ssid, true);
 	}
 #endif
 
