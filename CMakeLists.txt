@@ -37,6 +37,8 @@ add_executable(picowota
 	main.c
 	tcp_comm.c
 	dhcpserver/dhcpserver.c
+    display_minimal.c
+    uc1701_display_minimal.c
 )
 
 function(target_cl_options option)
@@ -54,7 +56,9 @@ pico_add_extra_outputs(picowota)
 
 target_include_directories(picowota PRIVATE
 	${CMAKE_CURRENT_LIST_DIR} # Needed so that lwip can find lwipopts.h
-	${CMAKE_CURRENT_LIST_DIR}/dhcpserver)
+	${CMAKE_CURRENT_LIST_DIR}/dhcpserver
+    ${CMAKE_SOURCE_DIR}/targets
+)
 
 pico_enable_stdio_usb(picowota 1)
 
@@ -68,9 +72,11 @@ target_link_libraries(picowota
 	hardware_structs
 	pico_cyw43_arch_lwip_poll
 	pico_stdlib
+    hardware_spi
 	pico_sync
 	pico_util
 	picowota_reboot
+    u8g2
 )
 
 # Retrieves build variables from the environment if present
