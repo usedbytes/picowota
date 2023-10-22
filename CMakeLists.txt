@@ -39,6 +39,8 @@ add_executable(picowota
 	dhcpserver/dhcpserver.c
     display_minimal.c
     uc1701_display_minimal.c
+    eeprom.c
+    cat24c256_eeprom.c
 )
 
 function(target_cl_options option)
@@ -73,6 +75,7 @@ target_link_libraries(picowota
 	pico_cyw43_arch_lwip_poll
 	pico_stdlib
     hardware_spi
+    hardware_i2c
 	pico_sync
 	pico_util
 	picowota_reboot

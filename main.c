@@ -29,8 +29,8 @@
 #include "tcp_comm.h"
 
 #include "picowota/reboot.h"
-
 #include "display_minimal.h"
+#include "eeprom.h"
 
 #ifdef DEBUG
 #include <stdio.h>
@@ -107,6 +107,21 @@ struct event {
 #define CMD_SEAL   (('S' << 0) | ('E' << 8) | ('A' << 16) | ('L' << 24))
 #define CMD_GO     (('G' << 0) | ('O' << 8) | ('G' << 16) | ('O' << 24))
 #define CMD_REBOOT (('B' << 0) | ('O' << 8) | ('O' << 16) | ('T' << 24))
+
+typedef struct {
+    uint16_t wireless_data_rev;
+    char ssid[32];
+    char pw[64];
+    uint32_t auth;
+    uint32_t timeout_ms;
+    bool configured;
+} __attribute__((packed)) eeprom_wireless_metadata_t;
+
+typedef struct {
+    eeprom_wireless_metadata_t eeprom_wireless_metadata;
+} wireless_config_t;
+
+static wireless_config_t wireless_config;
 
 static uint32_t handle_sync(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
@@ -566,10 +581,17 @@ static bool should_stay_in_bootloader()
 
 static void network_deinit()
 {
+	if(wireless_config.eeprom_wireless_metadata.configured){
+		cyw43_arch_deinit();
+	} else {
+		dhcp_server_deinit(&dhcp_server);
+	}
+/*	
 #if PICOWOTA_WIFI_AP == 1
 	dhcp_server_deinit(&dhcp_server);
 #endif
 	cyw43_arch_deinit();
+*/
 }
 
 int main()
@@ -582,9 +604,6 @@ int main()
 
 	sleep_ms(10);
 
-	// Configure others
-    display_minimal_init();
-
 	struct image_header *hdr = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
 
 	if (!should_stay_in_bootloader() && image_header_ok(hdr)) {
@@ -595,6 +614,12 @@ int main()
 	}
 
 	DBG_PRINTF_INIT();
+	// Configure others
+    display_minimal_init();
+	eeprom_init(); // read OpenTrickler config
+
+    memset(&wireless_config, 0x00, sizeof(wireless_config_t));
+	eeprom_read(EEPROM_WIRELESS_CONFIG_BASE_ADDR, (uint8_t *) &wireless_config.eeprom_wireless_metadata, sizeof(eeprom_wireless_metadata_t)); // will result in AP mode
 
 	queue_init(&event_queue, sizeof(struct event), EVENT_QUEUE_LENGTH);
 
@@ -603,6 +628,39 @@ int main()
 		return 1;
 	}
 
+	if (wireless_config.eeprom_wireless_metadata.configured) { // STA
+		cyw43_arch_enable_sta_mode();
+
+		DBG_PRINTF("Connecting to WiFi...\n");
+		if (cyw43_arch_wifi_connect_timeout_ms(
+				wireless_config.eeprom_wireless_metadata.ssid,
+				wireless_config.eeprom_wireless_metadata.pw,
+				wireless_config.eeprom_wireless_metadata.auth,
+				wireless_config.eeprom_wireless_metadata.timeout_ms
+				)) {
+			DBG_PRINTF("failed to connect.\n");
+			write_bl_info_STA(wifi_ssid, false);
+			return 1;
+		} else {
+			DBG_PRINTF("Connected.\n");
+			write_bl_info_STA(wireless_config.eeprom_wireless_metadata.ssid, true);
+		}
+	}
+	else{ // AP MODE
+		cyw43_arch_enable_ap_mode(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK);
+		DBG_PRINTF("Enabled the WiFi AP.\n");
+
+		ip4_addr_t gw, mask;
+		IP4_ADDR(&gw, 192, 168, 4, 1);
+		IP4_ADDR(&mask, 255, 255, 255, 0);
+
+		dhcp_server_t dhcp_server;
+		dhcp_server_init(&dhcp_server, &gw, &mask);
+		DBG_PRINTF("Started the DHCP server.\n");
+		write_bl_info_AP(wifi_ssid, wifi_pass);
+	}
+
+/*
 #if PICOWOTA_WIFI_AP == 1
 	cyw43_arch_enable_ap_mode(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK);
 	DBG_PRINTF("Enabled the WiFi AP.\n");
@@ -629,7 +687,7 @@ int main()
 		write_bl_info_STA(wifi_ssid, true);
 	}
 #endif
-
+*/
 	critical_section_init(&critical_section);
 
 	const struct comm_command *cmds[] = {
