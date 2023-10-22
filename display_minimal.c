@@ -35,6 +35,8 @@ void write_bl_info_STA(const char *wifi_ssid, bool status){
     if (status) {
         u8g2_DrawStr(&display_handler, 3, 30, "Successfully connected to:");
         u8g2_DrawStr(&display_handler, 3, 40, wifi_ssid);
+        u8g2_DrawStr(&display_handler, 3, 50, "Use serial-flash to");
+        u8g2_DrawStr(&display_handler, 3, 60, "update new app.elf.");
     } 
     else {
         u8g2_DrawStr(&display_handler, 3, 30, "FAILED connecting to:");
