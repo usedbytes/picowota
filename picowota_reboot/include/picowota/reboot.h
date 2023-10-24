@@ -11,6 +11,10 @@
 
 #define PICOWOTA_BOOTLOADER_ENTRY_MAGIC 0xb105f00d
 
+#ifdef __cplusplus
+extern "C" 
+#endif
+
 void picowota_reboot(bool to_bootloader);
 
 #endif /* __PICOWOTA_REBOOT_H__ */
