@@ -130,6 +130,11 @@ function(picowota_build_combined NAME)
 	get_target_property(PICOWOTA_SRC_DIR picowota SOURCE_DIR)
 	get_target_property(PICOWOTA_BIN_DIR picowota BINARY_DIR)
 
+	get_directory_property(initial_clean ADDITIONAL_MAKE_CLEAN_FILES)
+	list(APPEND clean_files ${initial_clean})
+	list(APPEND clean_files ${APP_BIN})
+	list(APPEND clean_files ${APP_HDR_BIN})
+
 	# The app must be built with the correct linker script (and a .bin)
 	picowota_build_standalone(${NAME})
 
@@ -149,6 +154,8 @@ function(picowota_build_combined NAME)
 			--update-section .app_hdr=${APP_HDR_BIN}
 			--update-section .app_bin=${APP_BIN} ${PICOWOTA_BIN_DIR}/picowota.elf ${COMBINED}.elf
 	)
+	list(APPEND clean_files ${COMBINED}.bin)
+	list(APPEND clean_files ${COMBINED}.elf)
 
 	add_custom_command(TARGET ${COMBINED} POST_BUILD
 		COMMAND ${CMAKE_OBJCOPY} -Obinary ${COMBINED}.elf ${COMBINED}.bin
@@ -161,6 +168,9 @@ function(picowota_build_combined NAME)
 	if (ELF2UF2_FOUND)
 		add_custom_command(TARGET ${COMBINED} POST_BUILD
 			COMMAND ELF2UF2 ${COMBINED}.elf ${COMBINED}.uf2
-	)
+		)
+		list(APPEND clean_files ${COMBINED}.uf2)
 	endif()
+
+	set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${clean_files}")
 endfunction()
