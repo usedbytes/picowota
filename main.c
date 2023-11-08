@@ -87,7 +87,8 @@ struct event {
 
 #define TCP_PORT 4242
 
-#define IMAGE_HEADER_OFFSET (360 * 1024)
+struct image_header app_image_header;
+#define IMAGE_HEADER_OFFSET ((uint32_t)&app_image_header - XIP_BASE)
 
 #define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
@@ -421,7 +422,7 @@ static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 	flash_range_program(IMAGE_HEADER_OFFSET, (const uint8_t *)&hdr, sizeof(hdr));
 	critical_section_exit(&critical_section);
 
-	struct image_header *check = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
+	struct image_header *check = &app_image_header;
 	if (memcmp(&hdr, check, sizeof(hdr))) {
 		return TCP_COMM_RSP_ERR;
 	}
