@@ -88,10 +88,11 @@ struct event {
 #define TCP_PORT 4242
 
 struct image_header app_image_header;
-#define IMAGE_HEADER_OFFSET ((uint32_t)&app_image_header - XIP_BASE)
+#define IMAGE_HEADER_ADDR   ((uint32_t)&app_image_header)
+#define IMAGE_HEADER_OFFSET (IMAGE_HEADER_ADDR - XIP_BASE)
 
-#define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
-#define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
+#define WRITE_ADDR_MIN (IMAGE_HEADER_ADDR + FLASH_SECTOR_SIZE)
+#define ERASE_ADDR_MIN (IMAGE_HEADER_ADDR)
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
 
 #define CMD_SYNC          (('S' << 0) | ('Y' << 8) | ('N' << 16) | ('C' << 24))
@@ -581,10 +582,8 @@ int main()
 
 	sleep_ms(10);
 
-	struct image_header *hdr = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
-
-	if (!should_stay_in_bootloader() && image_header_ok(hdr)) {
-		uint32_t vtor = *((uint32_t *)(XIP_BASE + IMAGE_HEADER_OFFSET));
+	if (!should_stay_in_bootloader() && image_header_ok(&app_image_header)) {
+		uint32_t vtor = *(uint32_t *)IMAGE_HEADER_ADDR;
 		disable_interrupts();
 		reset_peripherals();
 		jump_to_vtor(vtor);
