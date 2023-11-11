@@ -10,6 +10,18 @@ application which you want to be able to update over WiFi.
 
 There's an example project using picowota at https://github.com/usedbytes/picowota_blink
 
+The simplest way to build `picowota` by itself is:
+
+```
+mkdir build
+cd build
+export PICOWOTA_WIFI_SSID=picowota
+export PICOWOTA_WIFI_PASS=password
+export PICOWOTA_WIFI_AP=1
+cmake -DPICO_BOARD=pico_w -DPICO_SDK_PATH=/your/path/to/pico-sdk ../
+make
+```
+
 ## Using in your project
 
 First add `picowota` as a submodule to your project:
@@ -40,7 +52,7 @@ PICOWOTA_WIFI_AP # Optional; 0 = connect to the network, 1 = create it
 Then, you can either build just your standalone app binary (suitable for
 updating via `picowota` when it's already on the Pico), or a combined binary
 which contains the bootloader and the app (suitable for flashing the first
-time): 
+time):
 
 ```
 picowota_build_standalone(my_executable_name)
