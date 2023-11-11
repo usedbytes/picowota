@@ -39,6 +39,9 @@ parser.add_argument("ifile", help="Input application binary (binary)")
 parser.add_argument("ofile", help="Output header file (binary)")
 parser.add_argument("-a", "--addr", help="Load address of the application image",
                     type=any_int, default=0x10004000)
+parser.add_argument("-m", "--map", help="Map file to scan for application image section")
+parser.add_argument("-s", "--section", help="Section name to look for in map file",
+                    default=".app_bin")
 args = parser.parse_args()
 
 try:
@@ -46,7 +49,22 @@ try:
 except:
     sys.exit("Could not open input file '{}'".format(args.ifile))
 
-vtor = args.addr
+if args.map:
+    vtor = None
+    with open(args.map) as mapfile:
+        for line in mapfile:
+            if line.startswith(args.section):
+                parts = line.split()
+                if len(parts)>1:
+                    vtor = int(parts[1],0)
+                    print('found address 0x%x for %s in %s'%(vtor,args.section,args.map))
+                    break
+
+    if vtor is None:
+        sys.exit("Could not find section {} in {}".format(args.section,args.map))
+else:
+    vtor = args.addr
+
 size = len(idata)
 crc = binascii.crc32(idata)
 

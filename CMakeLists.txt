@@ -141,10 +141,9 @@ function(picowota_build_combined NAME)
 	# Build the bootloader with the sections to fill in
 	pico_set_linker_script(picowota ${PICOWOTA_SRC_DIR}/bootloader_shell.ld)
 
-	# TODO: The hard-coded address here is a bit nasty
 	add_custom_target(${NAME}_hdr DEPENDS ${NAME})
-	add_custom_command(TARGET ${NAME}_hdr DEPENDS ${NAME}
-		COMMAND ${PICOWOTA_SRC_DIR}/gen_imghdr.py -a 0x1005B000 ${APP_BIN} ${APP_HDR_BIN}
+	add_custom_command(TARGET ${NAME}_hdr DEPENDS ${NAME} picowota
+		COMMAND ${PICOWOTA_SRC_DIR}/gen_imghdr.py --map ${PICOWOTA_BIN_DIR}/picowota.elf.map --section .app_bin ${APP_BIN} ${APP_HDR_BIN}
 	)
 
 	add_custom_target(${COMBINED} ALL)
