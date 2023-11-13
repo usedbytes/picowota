@@ -87,10 +87,12 @@ struct event {
 
 #define TCP_PORT 4242
 
-#define IMAGE_HEADER_OFFSET (360 * 1024)
+struct image_header app_image_header;
+#define IMAGE_HEADER_ADDR   ((uint32_t)&app_image_header)
+#define IMAGE_HEADER_OFFSET (IMAGE_HEADER_ADDR - XIP_BASE)
 
-#define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
-#define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
+#define WRITE_ADDR_MIN (IMAGE_HEADER_ADDR + FLASH_SECTOR_SIZE)
+#define ERASE_ADDR_MIN (IMAGE_HEADER_ADDR)
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
 
 #define CMD_SYNC          (('S' << 0) | ('Y' << 8) | ('N' << 16) | ('C' << 24))
@@ -421,7 +423,7 @@ static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 	flash_range_program(IMAGE_HEADER_OFFSET, (const uint8_t *)&hdr, sizeof(hdr));
 	critical_section_exit(&critical_section);
 
-	struct image_header *check = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
+	struct image_header *check = &app_image_header;
 	if (memcmp(&hdr, check, sizeof(hdr))) {
 		return TCP_COMM_RSP_ERR;
 	}
@@ -580,10 +582,8 @@ int main()
 
 	sleep_ms(10);
 
-	struct image_header *hdr = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
-
-	if (!should_stay_in_bootloader() && image_header_ok(hdr)) {
-		uint32_t vtor = *((uint32_t *)(XIP_BASE + IMAGE_HEADER_OFFSET));
+	if (!should_stay_in_bootloader() && image_header_ok(&app_image_header)) {
+		uint32_t vtor = *(uint32_t *)IMAGE_HEADER_ADDR;
 		disable_interrupts();
 		reset_peripherals();
 		jump_to_vtor(vtor);
