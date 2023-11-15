@@ -141,14 +141,14 @@ function(picowota_build_combined NAME)
 	# Build the bootloader with the sections to fill in
 	pico_set_linker_script(picowota ${PICOWOTA_SRC_DIR}/bootloader_shell.ld)
 
-	add_custom_target(${NAME}_hdr DEPENDS ${NAME})
-	add_custom_command(TARGET ${NAME}_hdr DEPENDS ${NAME} picowota
+	add_custom_target(${NAME}_hdr DEPENDS ${NAME} picowota)
+	add_custom_command(TARGET ${NAME}_hdr
 		COMMAND ${PICOWOTA_SRC_DIR}/gen_imghdr.py --map ${PICOWOTA_BIN_DIR}/picowota.elf.map --section .app_bin ${APP_BIN} ${APP_HDR_BIN}
 	)
 
 	add_custom_target(${COMBINED} ALL)
 	add_dependencies(${COMBINED} picowota ${NAME}_hdr)
-	add_custom_command(TARGET ${COMBINED} DEPENDS ${NAME}_hdr
+	add_custom_command(TARGET ${COMBINED}
 		COMMAND ${CMAKE_OBJCOPY}
 			--update-section .app_hdr=${APP_HDR_BIN}
 			--update-section .app_bin=${APP_BIN} ${PICOWOTA_BIN_DIR}/picowota.elf ${COMBINED}.elf
