@@ -60,6 +60,7 @@ struct tcp_comm_ctx {
 	const struct comm_command *const *cmds;
 	unsigned int n_cmds;
 	uint32_t sync_opcode;
+	void (*activity_func)(bool);
 };
 
 #define COMM_BUF_OPCODE(_buf)       ((uint32_t *)((uint8_t *)(_buf)))
@@ -267,7 +268,7 @@ static err_t tcp_comm_client_close(struct tcp_comm_ctx *ctx)
 {
 	err_t err = ERR_OK;
 
-	cyw43_arch_gpio_put (0, false);
+	ctx->activity_func(false);
 	ctx->conn_state = CONN_STATE_CLOSED;
 
 	if (!ctx->client_pcb) {
@@ -450,17 +451,21 @@ static void tcp_comm_client_err(void *arg, err_t err)
 	ctx->client_pcb = NULL;
 	ctx->conn_state = CONN_STATE_CLOSED;
 	ctx->rx_bytes_needed = 0;
-	cyw43_arch_gpio_put (0, false);
+	ctx->activity_func(false);
 }
 
 static void tcp_comm_client_init(struct tcp_comm_ctx *ctx, struct tcp_pcb *pcb)
 {
 	ctx->client_pcb = pcb;
+	ctx->rx_bytes_received = 0;
+	ctx->rx_bytes_needed = 0;
+	ctx->rx_start_offs = 0;
+	ctx->tx_bytes_sent = 0;
+	ctx->tx_bytes_remaining = 0;
 	tcp_arg(pcb, ctx);
 
-	cyw43_arch_gpio_put (0, true);
-
 	tcp_comm_sync_begin(ctx);
+	ctx->activity_func(true);
 
 	tcp_sent(pcb, tcp_comm_client_sent);
 	tcp_recv(pcb, tcp_comm_client_recv);
@@ -522,7 +527,7 @@ err_t tcp_comm_listen(struct tcp_comm_ctx *ctx, uint16_t port)
 }
 
 struct tcp_comm_ctx *tcp_comm_new(const struct comm_command *const *cmds,
-		unsigned int n_cmds, uint32_t sync_opcode)
+				  unsigned int n_cmds, uint32_t sync_opcode, void (*activity_func)(bool) )
 {
 	struct tcp_comm_ctx *ctx = calloc(1, sizeof(struct tcp_comm_ctx));
 	if (!ctx) {
@@ -538,6 +543,7 @@ struct tcp_comm_ctx *tcp_comm_new(const struct comm_command *const *cmds,
 	ctx->cmds = cmds;
 	ctx->n_cmds = n_cmds;
 	ctx->sync_opcode = sync_opcode;
+	ctx->activity_func = activity_func;
 
 	return ctx;
 }

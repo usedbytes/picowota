@@ -29,7 +29,7 @@ err_t tcp_comm_server_close(struct tcp_comm_ctx *ctx);
 bool tcp_comm_server_done(struct tcp_comm_ctx *ctx);
 
 struct tcp_comm_ctx *tcp_comm_new(const struct comm_command *const *cmds,
-		unsigned int n_cmds, uint32_t sync_opcode);
+				  unsigned int n_cmds, uint32_t sync_opcode, void (*activity_func)(bool));
 void tcp_comm_delete(struct tcp_comm_ctx *ctx);
 
 #endif /* __TCP_COMM_H__ */
