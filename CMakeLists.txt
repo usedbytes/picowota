@@ -68,6 +68,7 @@ target_link_libraries(picowota
 	hardware_structs
 	pico_cyw43_arch_lwip_poll
 	pico_stdlib
+	pico_multicore
 	pico_sync
 	pico_util
 	picowota_reboot
@@ -89,6 +90,8 @@ endfunction()
 picowota_retrieve_variable(PICOWOTA_WIFI_SSID false)
 picowota_retrieve_variable(PICOWOTA_WIFI_PASS true)
 picowota_retrieve_variable(PICOWOTA_WIFI_AP false)
+picowota_retrieve_variable(PICOWOTA_ENTRY_PIN false)
+picowota_retrieve_variable(PICOWOTA_ENTRY_AUTORE false)
 
 if ((NOT PICOWOTA_WIFI_SSID) OR (NOT PICOWOTA_WIFI_PASS))
         message(FATAL_ERROR
@@ -105,6 +108,17 @@ target_compile_definitions(picowota PUBLIC PICOWOTA_WIFI_PASS=${PICOWOTA_WIFI_PA
 if (PICOWOTA_WIFI_AP)
 	target_compile_definitions(picowota PUBLIC PICOWOTA_WIFI_AP=1)
 	message("Building in WiFi AP mode.")
+endif()
+
+# Use the WiFi AP mode upon request
+if (PICOWOTA_ENTRY_AUTORE)
+	target_compile_definitions(picowota PUBLIC PICOWOTA_ENTRY_AUTORE=1)
+	message("Building with ota mode timeout auto reset.")
+endif()
+
+if (PICOWOTA_ENTRY_PIN)
+	target_compile_definitions(picowota PUBLIC PICOWOTA_ENTRY_PIN=${PICOWOTA_ENTRY_PIN})
+	message("Building with custom PICOWOTA_ENTRY_PIN.")
 endif()
 
 # Provide a helper to build a standalone target
