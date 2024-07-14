@@ -107,6 +107,18 @@ if (PICOWOTA_WIFI_AP)
 	message("Building in WiFi AP mode.")
 endif()
 
+# Set default values if not already defined
+if(NOT DEFINED PICOWOTA_RETRY_COUNT)
+    set(PICOWOTA_RETRY_COUNT 1)
+endif()
+
+if(NOT DEFINED PICOWOTA_RETRY_TIMEOUT_MS)
+    set(PICOWOTA_RETRY_TIMEOUT_MS 500)
+endif()
+
+target_compile_definitions(picowota PUBLIC PICOWOTA_RETRY_COUNT=${PICOWOTA_RETRY_COUNT})
+target_compile_definitions(picowota PUBLIC PICOWOTA_RETRY_TIMEOUT_MS=${PICOWOTA_RETRY_TIMEOUT_MS})
+
 # Provide a helper to build a standalone target
 function(picowota_build_standalone NAME)
 	get_target_property(PICOWOTA_SRC_DIR picowota SOURCE_DIR)

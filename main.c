@@ -572,6 +572,15 @@ static void network_deinit()
 	cyw43_arch_deinit();
 }
 
+static void retry(int i) {
+  if (i >= PICOWOTA_RETRY_COUNT - 1) {
+    DBG_PRINTF("attempt return to app\n");
+    picowota_reboot(false);
+  }
+  DBG_PRINTF("failed... retry #%d in %dms\n", (i + 1), PICOWOTA_RETRY_TIMEOUT_MS);
+  sleep_ms(PICOWOTA_RETRY_TIMEOUT_MS);
+}
+
 int main()
 {
 	err_t err;
@@ -593,10 +602,15 @@ int main()
 
 	queue_init(&event_queue, sizeof(struct event), EVENT_QUEUE_LENGTH);
 
-	if (cyw43_arch_init()) {
-		DBG_PRINTF("failed to initialise\n");
-		return 1;
-	}
+  DBG_PRINTF("Initializing CYW43...\n");
+  for (int i = 0; i < PICOWOTA_RETRY_COUNT; i++) {
+    if (cyw43_arch_init()) {
+      retry(i);
+    } else {
+      break;
+    }
+  }
+  DBG_PRINTF("Initialized.\n");
 
 #if PICOWOTA_WIFI_AP == 1
 	cyw43_arch_enable_ap_mode(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK);
@@ -613,12 +627,14 @@ int main()
 	cyw43_arch_enable_sta_mode();
 
 	DBG_PRINTF("Connecting to WiFi...\n");
-	if (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-		DBG_PRINTF("failed to connect.\n");
-		return 1;
-	} else {
-		DBG_PRINTF("Connected.\n");
-	}
+  for (int i = 0; i < PICOWOTA_RETRY_COUNT; i++) {
+    if (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_pass, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
+      retry(i);
+    } else {
+      break;
+    }
+  }
+	DBG_PRINTF("Connected.\n");
 #endif
 
 	critical_section_init(&critical_section);
