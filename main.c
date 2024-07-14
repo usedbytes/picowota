@@ -30,7 +30,12 @@
 
 #include "picowota/reboot.h"
 
-#ifdef DEBUG
+#if defined(DEBUG_UART)
+#include <stdio.h>
+#include "pico/stdio_uart.h"
+#define DBG_PRINTF_INIT() stdio_uart_init()
+#define DBG_PRINTF(...) printf(__VA_ARGS__)
+#elif defined(DEBUG)
 #include <stdio.h>
 #include "pico/stdio_usb.h"
 #define DBG_PRINTF_INIT() stdio_usb_init()
