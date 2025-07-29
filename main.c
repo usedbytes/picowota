@@ -22,9 +22,13 @@
 #include "hardware/resets.h"
 #include "hardware/uart.h"
 #include "hardware/watchdog.h"
+#include "hardware/sync.h"
 
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
+#if PICOWOTA_ENTRY_AUTORE == 1
+#include "pico/multicore.h"
+#endif
 
 #include "tcp_comm.h"
 
@@ -83,7 +87,11 @@ struct event {
 	};
 };
 
+#ifndef PICOWOTA_ENTRY_PIN
 #define BOOTLOADER_ENTRY_PIN 15
+#else
+#define BOOTLOADER_ENTRY_PIN PICOWOTA_ENTRY_PIN
+#endif
 
 #define TCP_PORT 4242
 
@@ -441,13 +449,13 @@ struct comm_command seal_cmd = {
 	.handle = &handle_seal,
 };
 
-static void disable_interrupts(void)
-{
-	SysTick->CTRL &= ~1;
-
-	NVIC->ICER[0] = 0xFFFFFFFF;
-	NVIC->ICPR[0] = 0xFFFFFFFF;
-}
+//static void disable_interrupts(void)
+//{
+//	SysTick->CTRL &= ~1;
+//
+//	NVIC->ICER[0] = 0xFFFFFFFF;
+//	NVIC->ICPR[0] = 0xFFFFFFFF;
+//}
 
 static void reset_peripherals(void)
 {
@@ -572,6 +580,16 @@ static void network_deinit()
 	cyw43_arch_deinit();
 }
 
+#if PICOWOTA_ENTRY_AUTORE == 1
+void core1_entry()
+{
+    // timout 5 minutes
+    sleep_ms(1000 * 60 * 5);
+    //auto reset(to bootloader)
+    picowota_reboot(true);
+}
+#endif
+
 int main()
 {
 	err_t err;
@@ -587,6 +605,7 @@ int main()
 		disable_interrupts();
 		reset_peripherals();
 		jump_to_vtor(vtor);
+		return 0;
 	}
 
 	DBG_PRINTF_INIT();
@@ -621,7 +640,11 @@ int main()
 	}
 #endif
 
-	critical_section_init(&critical_section);
+#if PICOWOTA_ENTRY_AUTORE == 1
+    multicore_launch_core1(core1_entry);
+#endif
+
+    critical_section_init(&critical_section);
 
 	const struct comm_command *cmds[] = {
 		&sync_cmd,
