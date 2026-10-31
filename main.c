@@ -441,7 +441,7 @@ struct comm_command seal_cmd = {
 	.handle = &handle_seal,
 };
 
-static void disable_interrupts(void)
+static void ota_disable_interrupts(void)
 {
 	SysTick->CTRL &= ~1;
 
@@ -584,7 +584,7 @@ int main()
 
 	if (!should_stay_in_bootloader() && image_header_ok(&app_image_header)) {
 		uint32_t vtor = *(uint32_t *)IMAGE_HEADER_ADDR;
-		disable_interrupts();
+		ota_disable_interrupts();
 		reset_peripherals();
 		jump_to_vtor(vtor);
 	}
@@ -662,7 +662,7 @@ int main()
 			case EVENT_TYPE_GO:
 				tcp_comm_server_close(tcp);
 				network_deinit();
-				disable_interrupts();
+				ota_disable_interrupts();
 				reset_peripherals();
 				jump_to_vtor(ev.go.vtor);
 				/* Should never get here */
